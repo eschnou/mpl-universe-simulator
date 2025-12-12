@@ -1,0 +1,346 @@
+\documentclass[aps,prd,twocolumn,showpacs,preprintnumbers,amsmath,amssymb,nofootinbib]{revtex4-2}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{bm}
+
+\usepackage{draftwatermark}
+\SetWatermarkText{DRAFT – \today}
+\SetWatermarkScale{1.7}
+
+\begin{document}
+
+\title{A Computational Parsimony Conjecture for Many-Worlds}
+
+\author{Laurent Eschenauer}
+\email{laurent@eschenauer.be}
+\affiliation{Independent Researcher}
+
+\date{\today}
+
+
+\begin{abstract}
+We propose a computational parsimony conjecture: for any implementation of quantum-mechanical interference and entanglement on local, resource-bounded hardware, enforcing single-outcome collapse requires strictly greater resources than maintaining full unitary evolution. This inverts the common intuition that many-worlds is ontologically extravagant. Once quantum structure is implemented on finite, local hardware, the wavefunction and its branching are already present; collapse is additional machinery.
+
+We illustrate—but do not prove—this conjecture on a concrete class of universe engines: message-passing lattices with wave-like local dynamics (wave-MPLs). We show that wave-like dynamics is the only known way to achieve native quantum structure on such lattices, and that any collapse overlay adds machinery beyond the unitary baseline. An Everett-style overlay, by contrast, simply takes the lattice state at face value: quasi-classical worlds are emergent patterns in a single evolving field, sharing structure wherever they have not yet diverged.
+
+The contribution is a reframing. The traditional question asks whether we can accept the extravagance of many worlds. The engineering question asks whether we can afford the overhead of collapse. We invite others to formalise, extend, or refute the conjecture.
+\end{abstract}
+
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{The Conjecture}
+\label{sec:conjecture}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+In this paper we adopt a design stance on quantum foundations. Instead of asking which interpretation is ``really'' correct, we ask what kind of finite, local, resource-limited computation could implement a world that looks quantum-mechanical to internal agents. We call such a computation a \emph{universe engine}.
+
+Within this stance, Everett-style ``many-worlds'' and collapse-based pictures look quite different. An Everett-style reading simply interprets the structure already present in the engine. A collapse-based reading demands additional machinery—to detect branchings, select outcomes, prune alternatives, and enforce consistency—on top of whatever dynamics implements quantum behaviour. The question of parsimony thus becomes concrete: how much extra do we pay for collapse?
+
+We propose the following working conjecture.
+
+\medskip
+\noindent\textbf{Computational Parsimony Conjecture for Many-Worlds.}
+\emph{For any implementation that (i) realises quantum-mechanical interference and entanglement and (ii) satisfies locality and bounded resources, enforcing single-outcome collapse requires strictly greater computational overhead (in local state, work per update, or communication volume) than simply maintaining full unitary evolution.}
+\medskip
+
+The underlying intuition is familiar to Everettians: once we take the quantum state seriously, no further dynamical postulate is needed to say which outcomes ``really'' occur. What is perhaps less familiar is recasting this as a claim about computational cost. Collapse theories modify or supplement unitary dynamics in order to privilege one outcome and suppress the rest—and this modification is not free. Once quantum structure is implemented, the state space and its branching are already there. The real design question is whether we pay extra, in state, compute, or communication, to continually suppress branches, or simply let them be.
+
+In what follows, we illustrate this conjecture on a concrete class of universe engines—message-passing lattices with wave-like local dynamics—and invite others to formalise, extend, or refute it.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Approach}
+\label{sec:approach}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We do not prove the conjecture stated above. Instead, we illustrate it by working through a concrete class of candidate universe engines and showing that, within this class, the pattern predicted by the conjecture holds.
+
+Our approach proceeds as follows:
+
+\begin{enumerate}
+    \item We introduce \emph{message-passing lattices} (MPLs) as a concrete hardware substrate satisfying locality and bounded resources (Section~\ref{sec:mpl}).
+    
+    \item We argue that, among the dynamics one might run on an MPL, wave-like local-unitary evolution is the only known option that directly realises quantum interference and entanglement without offloading cost to external structure (Section~\ref{sec:wave-mpl}).
+    
+    \item Given a wave-MPL as baseline, we show that any overlay enforcing single-outcome collapse requires additional machinery—detection, selection, pruning, and coordination—beyond the bare unitary dynamics (Section~\ref{sec:collapse-cost}).
+    
+    \item We show that an Everett-style overlay, by contrast, requires no such additions: it simply takes the wave-MPL state at face value and reads quasi-classical ``worlds'' as emergent patterns (Section~\ref{sec:everett-overlay}).
+    
+    \item We discuss implications for agents, probability, and nonlocality within this framework (Section~\ref{sec:implications}).
+\end{enumerate}
+
+This is an illustration on one class of substrates, not a general proof. The conjecture could fail in other regions of design space—for instance, on substrates where information loss is native rather than costly, or where finite precision induces automatic branch pruning. We return to these possibilities in Section~\ref{sec:scope}, and we regard the search for counterexamples as an open invitation.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Message-Passing Lattices}
+\label{sec:mpl}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We now introduce a concrete class of substrates: \emph{message-passing lattices} (MPLs). An MPL satisfies condition (ii) of the conjecture—locality and bounded resources—but does not by itself have quantum structure. That structure must be added through a choice of local state space and dynamics. The wave-like choice we describe below is the only known way to achieve quantum structure on this hardware without offloading cost to external structure, but we regard the search for alternatives as open.
+
+%------------------------------------------------------------------------------
+\subsection{Hardware}
+\label{sec:mpl-hardware}
+%------------------------------------------------------------------------------
+
+An MPL is a sparse network of simple nodes connected by local communication links. Each node holds a bounded local register and exchanges finite messages with its neighbours according to a uniform local rule.
+
+\paragraph{Topology.}
+The underlying structure is a graph $G = (V, E)$, whose vertices $v \in V$ represent local degrees of freedom and whose edges $e \in E$ represent communication links. Each node $i \in V$ has bounded degree: $\deg(i) \leq d_{\max}$ for some fixed constant that does not grow with $|V|$. This enforces locality. The graph need not be a regular grid; irregularities can encode effective matter, curvature, or other emergent properties.
+
+\paragraph{Local state and messages.}
+Each node carries a fixed-size local register $r_i$. Each incident edge supports a bounded message buffer. The total information stored at a node and its incident buffers is bounded by a constant independent of $|V|$.
+
+\paragraph{Local updates.}
+The engine evolves by applying the same local transition map at every node. For each node $i$, we consider a bounded neighbourhood $\mathcal{N}(i)$ consisting of $i$, its adjacent edges, and neighbouring nodes. The transition map
+\begin{equation}
+U : \mathcal{C}_{\mathcal{N}(i)} \to \mathcal{C}_{\mathcal{N}(i)}
+\end{equation}
+takes the joint configuration of registers and buffers in $\mathcal{N}(i)$ and returns an updated configuration. One logical time step consists of applying $U$ to every neighbourhood according to some fixed schedule.
+
+Because each update touches only a bounded neighbourhood, information propagates at most a bounded graph distance per step. This defines an effective light-cone: after $R$ steps, a disturbance can reach nodes at distance at most $R$.
+
+\paragraph{Design constraints.}
+From a universe-engineering perspective, an MPL embodies four constraints:
+\begin{itemize}
+    \item \emph{Locality:} each node has bounded degree and exchanges messages only with neighbours.
+    \item \emph{Uniform local rule:} the same transition map $U$ is applied at every node.
+    \item \emph{Bounded resources:} each node and its incident buffers store $O(1)$ bits, independent of $|V|$.
+    \item \emph{Finite signal speed:} information propagates at most one neighbourhood per update, defining an effective light-cone.
+\end{itemize}
+
+These are the conditions any dynamics on the lattice must respect. The question is what dynamics can realise quantum structure within them.
+
+%------------------------------------------------------------------------------
+\subsection{Adding Quantum Structure: Three Options}
+\label{sec:mpl-dynamics}
+%------------------------------------------------------------------------------
+
+The MPL hardware admits different choices of local dynamics. We compare three families, asking which can realise condition (i): native quantum-mechanical interference and entanglement.
+
+\paragraph{Deterministic classical rules.}
+Each register $r_i$ takes values in a finite set $S$, and the transition map $U$ is a deterministic function. A single trajectory does not realise superposition or interference. To recover quantum statistics, one must simulate many histories externally or embed off-lattice structure—neither of which counts as native.
+
+\paragraph{Stochastic rules.}
+Let $U$ depend on random bits from local sources or hidden registers. This yields probabilistic evolution with genuinely contingent futures. However, randomness is not superposition: once a stochastic choice is made, the unchosen branch is gone and cannot interfere with the chosen one. Such rules produce probabilities but not quantum interference or entanglement structure.
+
+\paragraph{Wave-like rules.}
+Encode each register as a small complex vector $\psi_i \in \mathbb{C}^k$ and let $U$ act as an approximately unitary map on the tensor product of local spaces. The global state is a vector in a finite-dimensional Hilbert space, evolving reversibly. Superposition and interference are now part of the kinematics; entanglement arises from local interactions.
+
+To respect bounded resources, each complex amplitude must be stored at finite precision—a fixed number of bits for real and imaginary parts. This makes the local state space finite and the per-node memory strictly bounded. The dynamics is then only approximately unitary: rounding errors accumulate, and amplitudes below the precision floor are effectively zero. We return to the implications of finite precision in Section~\ref{sec:scope}.
+
+%------------------------------------------------------------------------------
+\subsection{Wave-MPL}
+\label{sec:wave-mpl}
+%------------------------------------------------------------------------------
+
+Of these three, only the wave-like option realises quantum interference and entanglement in the native state space. We call this combination a \emph{wave-MPL}.
+
+Concretely: each node stores $k$ complex amplitudes at $b$-bit precision, giving a per-node memory cost of $O(kb)$ bits. For fixed $k$ and $b$, total memory scales linearly with the number of nodes $|V|$—the same scaling as a classical cellular automaton with a larger local state. The price of native quantum structure is a constant-factor increase in per-node storage, not a change in scaling.
+
+A wave-MPL satisfies both conditions of the conjecture:
+\begin{itemize}
+    \item[(i)] Interference and entanglement are native—encoded in complex amplitudes evolving under local-unitary dynamics.
+    \item[(ii)] Locality and bounded resources hold: each node stores $O(kb)$ bits and performs $O(k^2)$ operations per update.
+\end{itemize}
+
+We do not claim this is the only possible way to satisfy both conditions on an MPL, only that it is the only known way. If an alternative exists—perhaps a clever classical encoding, or a hybrid scheme—it would provide another test case for the conjecture. We proceed with wave-MPL as our working example.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Collapse Requires More}
+\label{sec:collapse-cost}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We now have a baseline: a wave-MPL that satisfies both conditions of the conjecture. Its dynamics is local-unitary, and its global state is a single lattice wavefunction that can encode many quasi-classical configurations in superposition.
+
+The conjecture claims that any overlay enforcing single-outcome collapse must cost more than an overlay that simply maintains unitary evolution. To make this precise, we measure cost along three axes:
+
+\begin{itemize}
+    \item \emph{State cost:} the size of each node's local state, including any extra registers for branch labels, collapse flags, random seeds, or coordination buffers.
+    \item \emph{Compute cost:} the work each node performs per update, including any logic to detect measurement-like situations, compute outcome weights, or sample random results.
+    \item \emph{Communication cost:} the information sent along links per update, including any coordination traffic beyond the minimal local exchanges of the base dynamics.
+\end{itemize}
+
+On a bare wave-MPL, the cost is just the baseline: $O(kb)$ bits of state per node, $O(k^2)$ operations per update, and local message-passing along edges. No additional structure is required; the dynamics simply applies the same local-unitary rule everywhere.
+
+Now suppose we insist that, whenever an interaction yields several macroscopically distinct outcomes, only one actually happens—as in standard collapse postulates or dynamical reduction models. How would such a requirement be implemented on a wave-MPL?
+
+On top of the baseline dynamics, the engine would need additional mechanisms:
+
+\paragraph{Detection.}
+The engine must recognise when the lattice state supports several macroscopically distinct, quasi-classical patterns—different detector readings, records, or memories. This requires logic to identify measurement-like situations, adding to compute cost.
+
+\paragraph{Selection.}
+The engine must choose which pattern is ``realised,'' using either genuine randomness or hidden structure encoding all future choices. Genuine randomness requires a source (additional state or an external oracle); hidden structure requires storage for the seeds or choice-history.
+
+\paragraph{Pruning.}
+Once an outcome is selected, the engine must suppress or erase the parts of the lattice state corresponding to unchosen outcomes, and prevent the dynamics from reintroducing them. In a reversible substrate, this is not a trivial operation—it is a many-to-one map imposed on an otherwise information-preserving dynamics, requiring extra logic and potentially extra bookkeeping to implement.
+
+\paragraph{Consistency.}
+If the same event is recorded across widely separated regions—many nodes storing copies of a measurement result—the engine must keep them mutually consistent. They must all agree on which outcome occurred. In a local-update architecture, enforcing this agreement requires coordination traffic beyond the baseline message-passing, adding to communication cost.
+
+\medskip
+
+Each of these tasks adds machinery beyond the bare wave-MPL. They require extra local state, extra local logic, and potentially extra communication. A collapse overlay is not free; it is an additional layer imposed on a substrate that already functions without it.
+
+By contrast, an Everett-style overlay requires none of this. It simply takes the wave-MPL state at face value. We turn to this in the next section.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Many-Worlds as the Minimal Overlay}
+\label{sec:everett-overlay}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The previous section showed that collapse requires additional machinery on top of a wave-MPL. An Everett-style overlay, by contrast, requires nothing beyond the baseline dynamics. But doesn't many-worlds have its own cost—namely, the proliferation of ``worlds''?
+
+The answer is no, because worlds are not separate allocations. There is only one physical object: the global lattice state. What we call ``worlds'' are quasi-classical patterns within that state—stable, decohered configurations of detectors, records, and observers that emerge from the dynamics.
+
+These patterns share structure. Two quasi-worlds that differ only in the outcome of one measurement are nearly identical: the same field values at almost every node, differing only in a localised region where the measurement occurred. In the wave-MPL representation, the shared parts are literally shared—encoded once in the global state, not duplicated. Branching is local: divergence begins where decoherence occurs and propagates outward at the light-cone speed. Distant regions remain identical across branches until the decoherence front reaches them.
+
+A programming analogy may help. Consider two approaches to exploring possibilities:
+
+\emph{Style A:} Maintain a single rich data structure encoding many alternatives at once. Update it with a rule that carries all alternatives forward. You never discard branches; the shared structure tracks how each evolves.
+
+\emph{Style B:} Insist on a single concrete state. At each branching point, pick one outcome, discard the rest, and rerun with different seeds if statistics are needed.
+
+A wave-MPL naturally implements Style A: one state encoding many patterns. An Everett overlay takes this at face value. A collapse overlay forces Style B behaviour onto a Style A substrate—repeatedly reducing to one branch and invoking additional machinery to pick and enforce the outcome.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\columnwidth]{figures/compression.jpeg}
+\caption{Local quasi-worlds as coherent patterns in a single lattice state. Panel A: quasi-world A, where a small region near $x_0$ has one definite pattern. Panel B: quasi-world B, identical elsewhere but with a different local pattern in that same region. Panel C: underlying lattice state, a single global field on the same sites. Outside the highlighted block all degrees of freedom are shared; inside it the amplitudes form a coherent superposition of the A-like and B-like local patterns. No separate substrate is required for each quasi-world.}
+\label{fig:shared-state}
+\end{figure}
+
+The apparent ``explosion of worlds'' is an explosion in the number of distinguishable patterns supported by a fixed-capacity field, not an explosion in physical resources. An Everett-style overlay simply reads these patterns off the lattice state. It adds no detection logic, no selection mechanism, no pruning rules, no coordination traffic. It is the baseline, interpreted.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Implications}
+\label{sec:implications}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The wave-MPL with an Everett-style overlay is our minimal baseline. Before turning to scope and limitations, we briefly address three questions: how agents experience apparent collapse, how the Born rule emerges, and how the framework handles quantum nonlocality.
+
+%------------------------------------------------------------------------------
+\subsection{Agents and Apparent Collapse}
+\label{sec:agents}
+%------------------------------------------------------------------------------
+
+The wave-MPL explores all quasi-classical patterns in parallel. Nothing in the microdynamics ever ``chooses'' one outcome. Yet from the perspective of an embedded agent, something like the textbook Copenhagen story reappears.
+
+By an agent we mean any subsystem that (i) stores records in persistent internal state, (ii) updates an internal model based on those records, and (iii) conditions future actions on that model. Humans qualify, but so do feedback controllers, error-correcting codes, and other information-processing structures implemented on the lattice.
+
+When a decohered record is copied into an agent's memory and fed into its decision loop, that record becomes a distinguished point in the agent's history. Relative to that agent, it is appropriate to speak as if one outcome occurred: their internal state updates from a superposed prior to a definite record, and subsequent behaviour is conditioned on that record alone. The agent has no access to the other branches—not because they were pruned, but because decoherence has made them effectively orthogonal.
+
+A concrete example clarifies the picture. Suppose agent A consults a quantum random number generator and observes the result without telling anyone. From A's perspective, one outcome definitely occurred—A's neurons encode a definite record, and A's subsequent behaviour is conditioned on it. But from agent B's perspective, before B learns the result, the lattice state encodes two patterns: one where A-saw-heads, one where A-saw-tails. B is not yet in either pattern \emph{with respect to A's result}; B remains in the shared region where the branches have not diverged for B. The moment B asks and A answers, the divergence propagates into B's brain state. Now there are two patterns of B as well—one correlated with A-saw-heads, one with A-saw-tails—and each B-instance experiences a definite answer.
+
+Each observer thus has their own ``collapse'' moment, determined by when the decoherence front reaches them. The Copenhagen update rule is not a competing fundamental dynamics but an effective description of how a resource-limited agent, embedded in an Everettian wave-MPL, tracks and uses information. The textbook story is recovered—but perspectivally, not globally.
+
+The apparent mystery of ``why this outcome?'' arises only if one demands an explanation for why a particular agent-instance has a particular experience. But a thermostat coupled to a quantum random source simply \emph{is} in some definite state, regulating accordingly; no further explanation is needed or even coherent. The question ``why this branch?'' smuggles in something beyond physics; the dynamics is already complete.
+
+%------------------------------------------------------------------------------
+\subsection{Probability from Conserved Structure}
+\label{sec:probability}
+%------------------------------------------------------------------------------
+
+In this framework there is only one fundamental object: the global lattice state. Quasi-classical worlds are patterns within that state, not separate substrates. To talk about probabilities, we need a rule assigning weights to patterns.
+
+Because the dynamics is approximately unitary, the state space carries a natural inner product and norm preserved in time. When decoherence separates the field into approximately orthogonal macropatterns, the squared norm of each component provides a canonical weight. This is the unique additive measure on orthogonal subspaces left unchanged by the dynamics. Crucially, there is no alternative: ``branch counting'' presupposes that branches are discrete, countable entities in the physics, but they are not. The wavefunction is a continuous field; ``branch'' is a coarse-graining imposed by an observer choosing a basis and a decoherence threshold. Without those choices, there is nothing to count. The $|\psi|^2$ measure is not one option among many—it is the only structure actually present.
+
+Embedded observers are themselves patterns in the same field. Any stable rule of expectation they adopt must respect the conserved measure of the substrate that implements them, or it will be systematically misaligned with the frequencies generated by the dynamics. In this sense, the Born rule is not an extra postulate bolted onto the engine; the $|\psi|^2$ weighting is already singled out by the geometry of the state space.
+
+We do not reproduce decision-theoretic or typicality-based derivations here. The point is simply that the wave-MPL supplies a natural, dynamics-respecting measure over patterns, and that measure has the usual $|\psi|^2$ form.
+
+%------------------------------------------------------------------------------
+\subsection{Locality and Quantum Correlations}
+\label{sec:nonlocality}
+%------------------------------------------------------------------------------
+
+The wave-MPL is explicitly local: each node updates only from itself and its neighbours, and signals propagate at a finite effective speed. There is no mechanism for instantaneous influence between distant sites.
+
+This does not mean the global state factorises into independent local pieces. The lattice field is a single extended object, and local interactions can imprint strong correlations into it. When two subsystems interact and then separate, the resulting joint pattern can encode constraints that tie their future outcomes together. Later, when each subsystem encounters its own local apparatus pattern, those constraints appear as correlated records at distant locations.
+
+Bell inequality violations reflect properties of this entangled state, not superluminal signalling or nonlocal update rules. The dynamics respects a strict light-cone structure; the correlations were established when the subsystems interacted in a common region and are merely revealed, not created, by later local measurements.	
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Scope and Limitations}
+\label{sec:scope}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The conjecture is illustrated here on one class of substrates: message-passing lattices with wave-like dynamics. We have argued that, on such substrates, collapse requires additional machinery beyond the unitary baseline. But the conjecture claims something stronger—that this holds for \emph{any} substrate satisfying conditions (i) and (ii). This stronger claim remains open, and there are regions of design space where the cost comparison might differ or reverse.
+
+%------------------------------------------------------------------------------
+\subsection{Finite Precision}
+\label{sec:finite-precision}
+%------------------------------------------------------------------------------
+
+We noted earlier that respecting bounded resources requires storing amplitudes at finite precision. This has a subtle implication: amplitudes that fall below the precision floor are effectively zero. Components of the wavefunction whose norm drops below the smallest representable value simply vanish from the engine's state.
+
+One might view this as a form of automatic branch pruning—collapse ``for free'' via finite resolution. If so, does the conjecture fail?
+
+We think not, for two reasons. First, the pruning is not selective: it affects all small-amplitude components equally, regardless of whether they encode ``measured'' or ``unmeasured'' outcomes. It is a resolution limit, not a measurement-triggered collapse. Second, for any precision compatible with realistic physics, the cutoff lies far below the amplitude of laboratory-scale branches. Macroscopic superpositions do not disappear due to rounding; they persist until decoherence makes their components effectively orthogonal. The continuum $|\psi|^2$ analysis remains an excellent approximation in the regime that matters.
+
+From the parsimony perspective, this truncation is part of the baseline engine; a collapse overlay would still need to selectively prune branches at amplitudes far above the precision floor, incurring the additional costs described in Section~\ref{sec:collapse-cost}.
+
+That said, a substrate with very coarse precision—one where macroscopic branches routinely underflow—would behave differently. Whether such a substrate could still satisfy condition (i) is unclear; aggressive truncation might destroy the interference structure that makes the substrate quantum-mechanical in the first place.
+
+%------------------------------------------------------------------------------
+\subsection{Dissipative Substrates}
+\label{sec:dissipative}
+%------------------------------------------------------------------------------
+
+Our wave-MPL is approximately reversible: information is preserved to good approximation, and the dynamics is norm-conserving. But one could imagine substrates where information loss is native rather than costly—strongly dissipative engines that naturally funnel toward a small set of attractor states.
+
+On such a substrate, collapse-like behaviour might emerge without additional machinery. The dynamics itself would prune branches, not as an overlay but as a feature of the base rule. The cost comparison with an Everettian overlay might then look different.
+
+However, it is not obvious that such substrates can satisfy condition (i). Quantum interference relies on coherent superposition; strong dissipation tends to destroy coherence. A substrate that is dissipative enough to provide ``free collapse'' might be too dissipative to support the interference and entanglement structure required by condition (i). Whether there exists a sweet spot—enough dissipation for cheap collapse, enough coherence for quantum behaviour—is an open question.
+
+%------------------------------------------------------------------------------
+\subsection{Classical Substrates}
+\label{sec:classical-substrates}
+%------------------------------------------------------------------------------
+
+A different challenge comes from proposals like 't Hooft's cellular automaton interpretation, which aims to recover quantum mechanics from an underlying deterministic classical substrate. If successful, such an approach would provide a single-history engine—no branching, no many-worlds—that nevertheless reproduces quantum statistics.
+
+Would this be a counterexample to the conjecture? It depends on whether the classical substrate satisfies condition (i). The claim in such proposals is that quantum structure is \emph{emergent}, not native: the substrate is classical, and quantum behaviour arises from constraints, coarse-graining, or special initial conditions. If so, the substrate does not satisfy condition (i), and the conjecture does not apply.
+
+Alternatively, if the classical structure encodes quantum interference in some clever way that counts as ``native,'' then the cost comparison becomes relevant. One would need to ask whether the hidden machinery required to produce single-history behaviour—the conspiracy of initial conditions, the superdeterministic constraints—constitutes an additional cost analogous to collapse. We suspect it does, but this remains to be analysed carefully.
+
+%------------------------------------------------------------------------------
+\subsection{Other Interpretations}
+\label{sec:other-interpretations}
+%------------------------------------------------------------------------------
+
+We have focused on collapse versus Everett, but other interpretations exist. Bohmian mechanics, for instance, maintains a definite particle configuration alongside the wavefunction. This adds structure—the particle positions—on top of the wave. In our framing, Bohmian mechanics would count as an overlay with additional state cost (the configuration) beyond the bare wavefunction. The conjecture would predict it is more expensive than the Everettian reading, which requires only the wave.
+
+Relational and perspectival interpretations, which relativise states to observers, are harder to assess. They may or may not require additional machinery depending on how ``observer'' is implemented. We leave this as an open question.
+
+\medskip
+
+The conjecture is not a theorem. It is a working hypothesis, illustrated on one class of substrates and likely to hold on others—but also potentially falsifiable. We regard the search for counterexamples, and the attempt to formalise the cost comparison precisely, as open invitations.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Outlook}
+\label{sec:outlook}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We have presented a computational parsimony conjecture for many-worlds and illustrated it on one class of universe engines. The argument is architectural, not mathematical: we have not proved the conjecture, but shown that it holds in a concrete setting and survives obvious objections. Several directions remain open.
+
+\paragraph{Formalisation.}
+It should be possible to state the conjecture precisely in terms of computational complexity or algorithmic information. One could define a class of local, resource-bounded universe engines and prove, for suitable toy models, that any collapse-implementing variant requires strictly greater resources than its unitary counterpart. Even a result for one-dimensional wave-MPLs with small local dimension would give the conjecture formal teeth.
+
+\paragraph{Falsification.}
+We have identified candidate regions of design space where the conjecture might fail: strongly dissipative substrates, finite-precision engines with aggressive truncation, classical substrates with emergent quantum structure. A concrete counterexample—a substrate satisfying conditions (i) and (ii) on which collapse is cheaper than unitary evolution—would refute the conjecture or at least sharpen its scope.
+
+\paragraph{Connections.}
+The wave-MPL framework invites connections to existing work on quantum cellular automata, lattice field theories, and tensor network models. It also suggests links to ideas relating entanglement structure to emergent geometry. If spacetime itself emerges from an underlying wave-like substrate, the cost of maintaining quasi-classical patterns may play a role in how geometry and gravity are experienced by embedded agents.
+
+\paragraph{The shift in intuition.}
+Perhaps the main contribution is a reframing. The traditional question asks whether we can accept the ontological extravagance of many worlds. The engineering question asks whether we can afford the computational overhead of collapse. On any substrate where quantum structure is native, the wavefunction and its branches are already present. The design choice is not whether to pay for many worlds, but whether to pay extra to suppress them.
+
+We hope this framing proves useful, and we invite others to formalise, extend, or refute the conjecture.
+
+\end{document}

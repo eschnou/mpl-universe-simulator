@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+title: "MPL Universe Simulator"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Eschenauer
+    given-names: Laurent
+    email: laurent@eschenauer.be
+version: 0.1.0
+date-released: 2025-01-01
+url: "https://github.com/eschnou/mpl-universe-simulator"
+repository-code: "https://github.com/eschnou/mpl-universe-simulator"
+license: MIT
+keywords:
+  - physics simulation
+  - emergent gravity
+  - message-passing lattice
+  - many-worlds
+  - computational physics
+abstract: >-
+  A 2D Message-Passing Lattice Universe Engine Simulator demonstrating
+  emergent gravity from finite bandwidth constraints. Implements the
+  concepts from the accompanying research papers on computational
+  parsimony and emergent gravity.
+references:
+  - type: article
+    authors:
+      - family-names: Eschenauer
+        given-names: Laurent
+    title: "A Computational Parsimony Conjecture for Many-Worlds"
+    year: 2025
+    # doi: TODO - add when available on arXiv or published
+  - type: article
+    authors:
+      - family-names: Eschenauer
+        given-names: Laurent
+    title: "Emergent Gravity from Finite Bandwidth in a Message-Passing Lattice Universe Engine"
+    year: 2025
+    # doi: TODO - add when available on arXiv or published
