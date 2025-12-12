@@ -54,13 +54,13 @@ def main():
     # Message sizes are STOCHASTIC: L ~ Poisson(activity * message_rate_scale)
     # For weak-congestion: mean message size should sometimes exceed capacity
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
-    beta = 1.0  # Synchronization coupling strength
+    beta = 0.9  # Sync coupling <1 for proper gradient diffusion (screened Poisson)
     scheduler_config = BandwidthSchedulerConfig(
         canonical_interval=10,      # Baseline ticks between updates
         bandwidth_per_tick=1.0,     # Link capacity per tick
         propagation_delay=1,        # Message travel time
         f_smoothing_alpha=0.05,     # Slower smoothing for stable convergence
-        beta=beta,                  # Sync coupling: 0=local only, 1=full neighbor coupling
+        beta=beta,                  # β<1: delays attenuate with distance
         message_rate_scale=8.0,     # Poisson mean = activity * scale
         stochastic_messages=True,   # Probabilistic message sizes per paper
     )

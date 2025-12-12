@@ -54,9 +54,13 @@ class BandwidthScheduler:
     """
     Scheduler with true causal bandwidth and waiting dynamics.
 
-    Each node tracks:
-    - When it can next update (based on bandwidth + sync constraints)
-    - When it last received a message from each neighbor
+    Uses GENERATION-BASED synchronization for proper delay propagation:
+    - Each node tracks its generation (update count)
+    - Messages carry the sender's generation
+    - A node can only proceed when it has FRESH messages from all neighbors
+      (neighbors must be at generation >= my_generation)
+
+    This ensures delays propagate through the lattice, creating log(r) falloff.
     """
 
     lattice: "Lattice"
@@ -71,7 +75,11 @@ class BandwidthScheduler:
     # Per-node timing state
     _next_update_tick: np.ndarray = field(default=None, init=False)
     _last_update_tick: np.ndarray = field(default=None, init=False)
-    _last_received: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs]
+
+    # Generation-based sync: tracks each node's generation and received generations
+    _generation: np.ndarray = field(default=None, init=False)  # [ny, nx]
+    _received_gen: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs]
+    _message_arrival: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs] tick when msg arrives
 
     # For λ tracking
     _lambda_field: np.ndarray = field(default=None, init=False)
@@ -85,8 +93,11 @@ class BandwidthScheduler:
         self._next_update_tick = np.zeros((ny, nx), dtype=np.int64)
         self._last_update_tick = np.zeros((ny, nx), dtype=np.int64)
 
-        # Bootstrap: all nodes have "received" from all neighbors at tick 0
-        self._last_received = np.zeros((ny, nx, n_dirs), dtype=np.int64)
+        # Generation tracking: all start at generation 0
+        self._generation = np.zeros((ny, nx), dtype=np.int64)
+        # Bootstrap: all nodes have "received" generation 0 from all neighbors at tick 0
+        self._received_gen = np.zeros((ny, nx, n_dirs), dtype=np.int64)
+        self._message_arrival = np.zeros((ny, nx, n_dirs), dtype=np.int64)
 
         # Initialize λ field
         self._lambda_field = np.zeros((ny, nx), dtype=np.float64)
@@ -139,71 +150,62 @@ class BandwidthScheduler:
                     self._update_node(y, x)
 
     def _update_node(self, y: int, x: int):
-        """Update a single node."""
+        """Update a single node with β-weighted neighbor waiting."""
         ny, nx = self.lattice.shape
         config = self.config
 
         # === COMPUTE MESSAGE SIZE (bandwidth constraint) ===
-        # Paper: "higher activity -> higher probability of large delta"
-        # L ~ Poisson(activity * scale), then push_ticks = ceil(L / bandwidth)
         rate = self.source_map.rates[y, x]
         if config.stochastic_messages:
-            # Probabilistic: draw message size from Poisson distribution
             poisson_mean = rate * config.message_rate_scale
             message_size = np.random.poisson(poisson_mean)
         else:
-            # Deterministic mean-field approximation
             message_size = rate * config.message_rate_scale
 
         push_ticks = int(np.ceil(message_size / config.bandwidth_per_tick))
-        push_ticks = max(push_ticks, 1)  # At least 1 tick
+        push_ticks = max(push_ticks, 1)
+
+        # === COMPUTE WAITING TIME FROM NEIGHBORS ===
+        # local_ready: when I finish my own work
+        local_ready = self.current_tick + push_ticks
+
+        # neighbor_ready: latest message arrival from any neighbor
+        neighbor_ready = self._message_arrival[y, x, :].max()
+
+        # Waiting time = how much later neighbors finish than me
+        # β controls how much of this waiting I actually do
+        neighbor_delay = max(0, neighbor_ready - local_ready)
+        actual_wait = int(config.beta * neighbor_delay)
 
         # === SEND MESSAGES TO NEIGHBORS ===
-        # Messages arrive after we finish pushing + propagation delay
-        message_arrival_tick = self.current_tick + push_ticks + config.propagation_delay
+        # My message arrives after: my_work + my_wait + propagation
+        message_arrival_tick = self.current_tick + push_ticks + actual_wait + config.propagation_delay
 
         for direction in self.lattice.directions:
             dy, dx = self._directions[direction]
             neighbor_y = (y + dy) % ny
             neighbor_x = (x + dx) % nx
 
-            # Mark that neighbor received from us (from opposite direction)
             opposite_dir = self._get_opposite_direction(direction)
             opp_idx = self._dir_to_idx[opposite_dir]
-            self._last_received[neighbor_y, neighbor_x, opp_idx] = message_arrival_tick
+            self._message_arrival[neighbor_y, neighbor_x, opp_idx] = message_arrival_tick
 
         # === COMPUTE NEXT UPDATE TIME ===
-        # local_ready: when I finish my own work (pushing my message)
-        local_ready = self.current_tick + push_ticks
+        self._next_update_tick[y, x] = local_ready + actual_wait
 
-        # neighbor_ready: when I've received from all neighbors (bounded staleness)
-        # Uses max of arrival times - must have heard from everyone
-        neighbor_ready = self._last_received[y, x, :].max()
-
-        # Apply beta: controls coupling strength
-        # β=0: next_update = local_ready (ignore neighbors)
-        # β=1: next_update = max(local_ready, neighbor_ready) (full coupling)
-        extra_neighbor_wait = max(0, neighbor_ready - local_ready)
-        self._next_update_tick[y, x] = local_ready + int(config.beta * extra_neighbor_wait)
-
-        # === COMPUTE f AND λ (paper's definitions) ===
+        # === COMPUTE f AND λ ===
+        # λ depends on TOTAL delay: own work + waiting for neighbors
         last_update = self._last_update_tick[y, x]
         actual_interval = self.current_tick - last_update
 
         if actual_interval > 0:
-            # f = fraction of updates completed = canonical / actual
-            # f ∈ (0, 1]: f=1 means full speed, f→0 means stopped
             local_f = min(1.0, config.canonical_interval / actual_interval)
-
-            # λ = 1 - f = stalling fraction (paper's definition, bounded [0,1])
             lambda_local = 1.0 - local_f
 
-            # Update with EMA smoothing
             alpha = config.f_smoothing_alpha
             self._lambda_field[y, x] = (1 - alpha) * self._lambda_field[y, x] + alpha * lambda_local
             self.lattice.f[y, x] = (1 - alpha) * self.lattice.f[y, x] + alpha * local_f
 
-        # Update last update time
         self._last_update_tick[y, x] = self.current_tick
         self.total_updates += 1
 
