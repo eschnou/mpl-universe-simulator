@@ -38,8 +38,10 @@ class BandwidthSchedulerConfig:
     propagation_delay: int = 1  # Ticks for message to travel one link
     f_smoothing_alpha: float = 0.1  # EMA smoothing for f field
 
-    # If True, require messages from all neighbors before updating
-    sync_required: bool = True
+    # Synchronization coupling strength (paper's β parameter)
+    # β=0: purely local (ignore neighbors), β=1: full sync pressure
+    # next_update = local_ready + beta * max(0, neighbor_ready - local_ready)
+    beta: float = 1.0
 
     # Probabilistic message size: L ~ Poisson(activity * message_rate_scale)
     # Keep mean L << link_capacity for weak-congestion regime
@@ -171,31 +173,30 @@ class BandwidthScheduler:
             self._last_received[neighbor_y, neighbor_x, opp_idx] = message_arrival_tick
 
         # === COMPUTE NEXT UPDATE TIME ===
-        # 1. Bandwidth constraint: can't update until we've pushed our data
-        bandwidth_ready = self.current_tick + push_ticks
+        # local_ready: when I finish my own work (pushing my message)
+        local_ready = self.current_tick + push_ticks
 
-        # 2. Sync constraint: can't update until we've received from all neighbors
-        if config.sync_required:
-            # Need to receive from all neighbors AFTER our current update
-            # So we look at when the NEXT message from each neighbor will arrive
-            sync_ready = self._last_received[y, x, :].max()
-        else:
-            sync_ready = 0
+        # neighbor_ready: when I've received from all neighbors (bounded staleness)
+        # Uses max of arrival times - must have heard from everyone
+        neighbor_ready = self._last_received[y, x, :].max()
 
-        self._next_update_tick[y, x] = max(bandwidth_ready, sync_ready)
+        # Apply beta: controls coupling strength
+        # β=0: next_update = local_ready (ignore neighbors)
+        # β=1: next_update = max(local_ready, neighbor_ready) (full coupling)
+        extra_neighbor_wait = max(0, neighbor_ready - local_ready)
+        self._next_update_tick[y, x] = local_ready + int(config.beta * extra_neighbor_wait)
 
-        # === COMPUTE λ AND f ===
+        # === COMPUTE f AND λ (paper's definitions) ===
         last_update = self._last_update_tick[y, x]
         actual_interval = self.current_tick - last_update
 
         if actual_interval > 0:
-            # λ = slowdown factor = (actual - canonical) / canonical
-            # This is UNBOUNDED: if actual >> canonical, λ >> 1
-            lambda_local = (actual_interval - config.canonical_interval) / config.canonical_interval
-            lambda_local = max(0.0, lambda_local)  # Can't be negative
+            # f = fraction of updates completed = canonical / actual
+            # f ∈ (0, 1]: f=1 means full speed, f→0 means stopped
+            local_f = min(1.0, config.canonical_interval / actual_interval)
 
-            # f = 1 / (1 + λ), maps λ ∈ [0, ∞) to f ∈ (0, 1]
-            local_f = 1.0 / (1.0 + lambda_local)
+            # λ = 1 - f = stalling fraction (paper's definition, bounded [0,1])
+            lambda_local = 1.0 - local_f
 
             # Update with EMA smoothing
             alpha = config.f_smoothing_alpha

@@ -54,12 +54,13 @@ def main():
     # Message sizes are STOCHASTIC: L ~ Poisson(activity * message_rate_scale)
     # For weak-congestion: mean message size should sometimes exceed capacity
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
+    beta = 1.0  # Synchronization coupling strength
     scheduler_config = BandwidthSchedulerConfig(
         canonical_interval=10,      # Baseline ticks between updates
         bandwidth_per_tick=1.0,     # Link capacity per tick
         propagation_delay=1,        # Message travel time
         f_smoothing_alpha=0.05,     # Slower smoothing for stable convergence
-        sync_required=True,         # Require neighbor sync (creates spatial coupling)
+        beta=beta,                  # Sync coupling: 0=local only, 1=full neighbor coupling
         message_rate_scale=8.0,     # Poisson mean = activity * scale
         stochastic_messages=True,   # Probabilistic message sizes per paper
     )
@@ -72,7 +73,7 @@ def main():
 
     print(f"   Grid size: {nx}x{ny}")
     print(f"   Source: Gaussian at center, peak_rate=2.0, sigma=8")
-    print(f"   BandwidthScheduler: stochastic={scheduler_config.stochastic_messages}")
+    print(f"   BandwidthScheduler: beta={beta}, stochastic={scheduler_config.stochastic_messages}")
     print(f"   Message size: L ~ Poisson(activity * {scheduler_config.message_rate_scale}), capacity={scheduler_config.bandwidth_per_tick}/tick")
 
     # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
@@ -85,12 +86,51 @@ def main():
     print(f"   Min f:  {stats['min_f']:.4f}")
     print(f"   Max λ:  {stats['max_lambda']:.4f}")
 
+    # === VERIFY PAPER'S LINEAR EQUATION: λ = γa + β⟨λ⟩ ===
+    print("\n3. Testing paper's self-consistency equation: λ = γa + β⟨λ⟩...")
+
+    # Get simulated λ field
+    lambda_sim = 1.0 - lattice.f
+
+    # Compute neighbor average ⟨λ⟩ for each node
+    lambda_neighbor_avg = (
+        np.roll(lambda_sim, 1, axis=0) +   # N
+        np.roll(lambda_sim, -1, axis=0) +  # S
+        np.roll(lambda_sim, 1, axis=1) +   # E
+        np.roll(lambda_sim, -1, axis=1)    # W
+    ) / 4.0
+
+    # Normalized activity (like in TheoreticalScheduler)
+    a_norm = source_map.rates / lattice.config.link_capacity
+
+    # Fit: λ_sim = γ * a_norm + β * ⟨λ⟩
+    # This is a 2-parameter linear regression: λ = γ*a + β*⟨λ⟩
+    # We can solve it with least squares
+    margin = 5
+    inner = (slice(margin, -margin), slice(margin, -margin))
+
+    lambda_flat = lambda_sim[inner].flatten()
+    a_flat = a_norm[inner].flatten()
+    neighbor_flat = lambda_neighbor_avg[inner].flatten()
+
+    # Build design matrix [a, ⟨λ⟩] and solve for [γ, β]
+    X = np.column_stack([a_flat, neighbor_flat])
+    coeffs, residuals, rank, s = np.linalg.lstsq(X, lambda_flat, rcond=None)
+    gamma_fit, beta_fit = coeffs
+
+    # Compute predicted λ and correlation
+    lambda_predicted = gamma_fit * a_flat + beta_fit * neighbor_flat
+    corr_linear = np.corrcoef(lambda_flat, lambda_predicted)[0, 1]
+
+    print(f"   Fitted: λ = {gamma_fit:.4f}·a + {beta_fit:.4f}·⟨λ⟩")
+    print(f"   Correlation (simulated vs predicted): {corr_linear:.4f}")
+    print(f"   (Paper predicts γ>0 for bandwidth coupling, β∈[0,1] for sync coupling)")
+
     # Verify Poisson emergence (both pure and screened)
-    print("\n3. Verifying Poisson emergence...")
+    print("\n4. Verifying Poisson emergence...")
     result_pure = verify_poisson_emergence(lattice, source_map)
-    # For BandwidthScheduler, there's no explicit beta - screening emerges from dynamics
-    # We use best-fit m² search rather than theoretical prediction
-    result_screened = verify_screened_poisson_emergence(lattice, source_map, beta=0.9)
+    # Use fitted beta for screened Poisson comparison
+    result_screened = verify_screened_poisson_emergence(lattice, source_map, beta=beta_fit)
 
     print(f"\n   RESULTS:")
     print(f"   ---------")
@@ -113,7 +153,7 @@ def main():
     result = result_pure  # Keep for backward compatibility with plots
 
     # Create visualization
-    print("\n4. Creating visualization...")
+    print("\n5. Creating visualization...")
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
     # Plot 1: f field
