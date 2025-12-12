@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from mplsim.core import Lattice, LatticeConfig, SourceMap, LoadGeneratorKernel, TheoreticalScheduler, TheoreticalSchedulerConfig
+from mplsim.core import Lattice, LatticeConfig, SourceMap, LoadGeneratorKernel, BandwidthScheduler, BandwidthSchedulerConfig
 from mplsim.analysis import verify_poisson_emergence, verify_screened_poisson_emergence, compute_radial_profile
 
 
@@ -30,10 +30,10 @@ def main():
     print("Verifying: (Lλ) + m²λ ≈ κ · ρ_act(x)  (Screened Poisson)")
     print("=" * 60)
 
-    # Setup engine with TheoreticalScheduler (implements paper's linear λ dynamics directly)
-    print("\n1. Setting up engine with TheoreticalScheduler...")
+    # Setup engine with BandwidthScheduler (TRUE causal emergence from bandwidth limits)
+    print("\n1. Setting up engine with BandwidthScheduler...")
+    print("   (This uses REAL bandwidth constraints, not hardcoded equations)")
     nx, ny = 80, 80
-    beta, gamma = 0.8, 0.1
 
     config = LatticeConfig(
         nx=nx, ny=ny,
@@ -45,18 +45,25 @@ def main():
     lattice = Lattice(config)
 
     # Create source map with Gaussian mass
-    source_map = SourceMap(ny, nx, background_rate=0.01)
-    source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=0.5, sigma=8.0)
+    # Higher activity at source -> more data to push -> longer waits -> lower f
+    source_map = SourceMap(ny, nx, background_rate=0.1)
+    source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=2.0, sigma=8.0)
 
-    # Use TheoreticalScheduler for direct computation of λ = γa + β⟨λ⟩
+    # Use BandwidthScheduler for TRUE causal emergence
+    # λ emerges from actual waiting: λ = (actual_interval - canonical) / canonical
+    # Message sizes are STOCHASTIC: L ~ Poisson(activity * message_rate_scale)
+    # For weak-congestion: mean message size should sometimes exceed capacity
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
-    scheduler_config = TheoreticalSchedulerConfig(
-        gamma=gamma,
-        beta=beta,
-        lambda_decay=0.0,
-        lambda_smoothing=0.3,
+    scheduler_config = BandwidthSchedulerConfig(
+        canonical_interval=10,      # Baseline ticks between updates
+        bandwidth_per_tick=1.0,     # Link capacity per tick
+        propagation_delay=1,        # Message travel time
+        f_smoothing_alpha=0.05,     # Slower smoothing for stable convergence
+        sync_required=True,         # Require neighbor sync (creates spatial coupling)
+        message_rate_scale=8.0,     # Poisson mean = activity * scale
+        stochastic_messages=True,   # Probabilistic message sizes per paper
     )
-    scheduler = TheoreticalScheduler(
+    scheduler = BandwidthScheduler(
         lattice=lattice,
         source_map=source_map,
         kernel=kernel,
@@ -64,14 +71,16 @@ def main():
     )
 
     print(f"   Grid size: {nx}x{ny}")
-    print(f"   Source: Gaussian at center, peak_rate=0.5, sigma=8")
-    print(f"   TheoreticalScheduler: β={beta}, γ={gamma}")
+    print(f"   Source: Gaussian at center, peak_rate=2.0, sigma=8")
+    print(f"   BandwidthScheduler: stochastic={scheduler_config.stochastic_messages}")
+    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.message_rate_scale}), capacity={scheduler_config.bandwidth_per_tick}/tick")
 
-    # Run to steady state
+    # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
     print("\n2. Running engine to steady state...")
-    n_warmup = 500
+    n_warmup = 5000  # More ticks needed for causal dynamics to propagate
+    print(f"   Running {n_warmup} ticks (this simulates real bandwidth dynamics)...")
     stats = scheduler.run(n_warmup)
-    print(f"   Ran {n_warmup} ticks")
+    print(f"   Completed {n_warmup} ticks, {stats['total_updates']} node updates")
     print(f"   Mean f: {stats['mean_f']:.4f}")
     print(f"   Min f:  {stats['min_f']:.4f}")
     print(f"   Max λ:  {stats['max_lambda']:.4f}")
@@ -79,7 +88,9 @@ def main():
     # Verify Poisson emergence (both pure and screened)
     print("\n3. Verifying Poisson emergence...")
     result_pure = verify_poisson_emergence(lattice, source_map)
-    result_screened = verify_screened_poisson_emergence(lattice, source_map, beta=beta)
+    # For BandwidthScheduler, there's no explicit beta - screening emerges from dynamics
+    # We use best-fit m² search rather than theoretical prediction
+    result_screened = verify_screened_poisson_emergence(lattice, source_map, beta=0.9)
 
     print(f"\n   RESULTS:")
     print(f"   ---------")
@@ -185,13 +196,12 @@ def main():
     plt.tight_layout()
 
     # Save figure
-    output_dir = Path("output")
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path("output/demo_emergence")
+    output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "poisson_emergence.png"
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
     print(f"   Saved to: {output_path}")
-
-    plt.show()
 
     print("\n" + "=" * 60)
     print("Demo complete!")

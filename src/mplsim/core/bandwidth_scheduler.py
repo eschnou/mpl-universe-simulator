@@ -41,6 +41,11 @@ class BandwidthSchedulerConfig:
     # If True, require messages from all neighbors before updating
     sync_required: bool = True
 
+    # Probabilistic message size: L ~ Poisson(activity * message_rate_scale)
+    # Keep mean L << link_capacity for weak-congestion regime
+    message_rate_scale: float = 10.0  # Scale factor for Poisson mean
+    stochastic_messages: bool = True  # If False, use deterministic (mean-field)
+
 
 @dataclass
 class BandwidthScheduler:
@@ -136,10 +141,19 @@ class BandwidthScheduler:
         ny, nx = self.lattice.shape
         config = self.config
 
-        # === COMPUTE TIME TO PUSH DATA (bandwidth constraint) ===
+        # === COMPUTE MESSAGE SIZE (bandwidth constraint) ===
+        # Paper: "higher activity -> higher probability of large delta"
+        # L ~ Poisson(activity * scale), then push_ticks = ceil(L / bandwidth)
         rate = self.source_map.rates[y, x]
-        data_to_push = rate * config.canonical_interval
-        push_ticks = int(np.ceil(data_to_push / config.bandwidth_per_tick))
+        if config.stochastic_messages:
+            # Probabilistic: draw message size from Poisson distribution
+            poisson_mean = rate * config.message_rate_scale
+            message_size = np.random.poisson(poisson_mean)
+        else:
+            # Deterministic mean-field approximation
+            message_size = rate * config.message_rate_scale
+
+        push_ticks = int(np.ceil(message_size / config.bandwidth_per_tick))
         push_ticks = max(push_ticks, 1)  # At least 1 tick
 
         # === SEND MESSAGES TO NEIGHBORS ===
