@@ -286,32 +286,49 @@ The broader point is methodological. Starting from computational constraints cha
 
 Consider an MPL where each node $x$ has activity $a(x)$ and each edge has capacity $C$ bits per update opportunity. Let $\lambda(x) = 1 - f(x)$ be the stalling fraction—the fraction of update cycles lost to congestion. We work with $\lambda$ (positive in congested regions) for intuitive clarity, then convert to $\phi = -\lambda$ at the end.
 
-We also introduce a coupling parameter $\beta \in [0, 1]$ representing the connectivity strength between nodes:
-\begin{itemize}
-  \item $\beta = 1$: maximal neighbor-induced stalling in the linear-response model
-  \item $\beta = 0$: purely local stalling (independent updates)
-  \item $0 < \beta < 1$: intermediate coupling (partial synchronization pressure)
-\end{itemize}
-
 %------------------------------------------------------------------------------
 \subsection{Sources of Stalling}
 %------------------------------------------------------------------------------
 
-A node fails to complete an update cycle for two reasons:
-
-\paragraph{Bandwidth saturation.}
-Higher activity means larger expected state changes, which increases the probability that a given delta exceeds link capacity. In the weak-congestion regime, the stalling probability grows approximately linearly:
+We characterize congestion at node $x$ by its long-time \emph{stall fraction}
 \begin{equation}
-    P_{\text{local}}(x) \approx \gamma \cdot a(x)
+    \lambda(x) \equiv 1 - f(x),
 \end{equation}
-where $\gamma$ depends on the encoding efficiency and capacity $C$.
+where $f(x)\in[0,1]$ is the fraction of update opportunities at $x$ that result in a completed cycle.
+In the weak-congestion (linear-response) regime, $\lambda(x)\ll 1$, we model $\lambda$ as the sum of
+a \emph{local} contribution (insufficient bandwidth to ship the required delta) and a \emph{coupling}
+contribution (neighbor-induced slowdowns transmitted through synchronization pressure).
 
-\paragraph{Synchronization.}
-A node may need to wait for inputs from neighbors. The strength of this coupling is controlled by $\beta$. When $\beta = 1$, a node cannot proceed until all neighbors have delivered their updates. When $\beta < 1$, nodes can partially decouple—proceeding with stale data or interpolated values. The synchronization contribution is:
+\paragraph{Local bandwidth load.}
+When activity $a(x)$ is higher, the typical delta $\Delta s_x$ to be transmitted after a compute step
+is larger, so the propagate stage more often requires more than one opportunity to drain through
+finite-capacity links. Without committing to a specific coding scheme, we assume that in linear
+response the resulting stall fraction increases approximately linearly with activity:
 \begin{equation}
-    P_{\text{sync}}(x) = \beta \cdot \langle \lambda \rangle_x
+    \lambda_{\text{local}}(x) \approx \gamma\, a(x),
 \end{equation}
-where $\langle \lambda \rangle_x = \frac{1}{d}\sum_{y \sim x} \lambda(y)$ is the average stalling fraction of neighbors.
+where $\gamma>0$ lumps together encoding overhead and link capacity $C$ (and depends on the choice of
+activity units).
+
+\paragraph{Synchronization pressure from neighbors.}
+Stalling can spread when update completion at $x$ depends on the freshness of neighbor information.
+Rather than modeling an exact per-cycle barrier, we coarse-grain this effect as a linear drag toward
+the typical neighbor stall level:
+\begin{equation}
+    \lambda_{\text{sync}}(x) \approx \beta\,\langle \lambda \rangle_x,
+\end{equation}
+with coupling strength $\beta\in[0,1]$ and neighbor average
+$\langle \lambda \rangle_x = \frac{1}{d}\sum_{y\sim x}\lambda(y)$ on a degree-$d$ lattice.
+Microscopically, $\beta$ can be interpreted as a bounded-staleness policy: $\beta\simeq 0$ corresponds
+to nearly independent progress using stale/interpolated neighbor data, while $\beta\to 1$ corresponds
+to strong synchronization pressure where neighbor delay strongly impacts local completion.
+
+Combining both contributions yields the linear-response closure used below:
+\begin{equation}
+    \lambda(x) \approx \lambda_{\text{local}}(x)+\lambda_{\text{sync}}(x)
+    = \gamma\,a(x) + \beta\,\langle \lambda \rangle_x.
+\end{equation}
+
 
 
 %------------------------------------------------------------------------------
@@ -366,22 +383,22 @@ The equation
 \end{equation}
 has different character depending on $\beta$:
 
-\paragraph{Strong coupling ($\beta = 1$).}
-The first term vanishes, leaving a pure Laplacian equation:
-\begin{equation}
-    (L\lambda)(x) = d\gamma \cdot a(x)
-\end{equation}
-This gives long-range $1/r$ behavior in three dimensions—gravity that extends to infinity.
-
 \paragraph{Weak coupling ($\beta \to 0$).}
 The Laplacian term vanishes, leaving:
 \begin{equation}
     \lambda(x) = \gamma \cdot a(x)
 \end{equation}
+
 Stalling is purely local. There is no spatial propagation—each node's congestion depends only on its own activity.
 
 \paragraph{Intermediate coupling ($0 < \beta < 1$).}
-Both terms contribute. This is a screened Poisson equation: stalling propagates spatially but decays exponentially beyond a characteristic length scale $\xi \sim \sqrt{\beta / (1-\beta)}$. The lattice has finite-range gravity.
+Both terms contribute. This is a screened Poisson equation: stalling propagates spatially but decays exponentially beyond a characteristic length scale $\xi = \ell\sqrt{\beta / d(1-\beta)}$, where $\ell$ is the lattice spacing and $d$ is the node degree. The lattice has finite-range gravity.
+
+\paragraph{Strong coupling ($\beta = 1$).}
+The first term vanishes, leaving a pure Laplacian equation:
+\begin{equation}
+    (L\lambda)(x) = d\gamma \cdot a(x)
+\end{equation}
 
 %------------------------------------------------------------------------------
 \subsection{Continuum Limit}
@@ -420,5 +437,38 @@ To match Newtonian conventions where the potential is negative near sources, we 
 \end{equation}
 with solution $\phi \propto -1/r$. This matches the Newtonian gravitational potential, where $\nabla^2 \Phi = 4\pi G \rho_{\text{mass}}$ gives $\Phi = -GM/r$.
 
+%------------------------------------------------------------------------------
+\subsection{Observational Constraint on $\beta$}
+\label{subsec:beta_constraint}
+%------------------------------------------------------------------------------
+
+The coupling parameter $\beta$ can be bounded from below using gravitational wave
+observations. For $\beta < 1$, the time-sag field obeys a screened Poisson equation
+with characteristic length scale
+\begin{equation}
+    \xi = \ell\sqrt{\frac{\beta}{d(1-\beta)}}
+\end{equation}
+where $\ell$ is the lattice spacing and $d$ is the node degree. Beyond this scale,
+the field decays exponentially rather than as $1/r$.
+
+Gravitational wave event GW150914, detected by LIGO in September 2015, originated
+from a binary black hole merger at luminosity distance $r \approx 1.2 \times 10^{25}$~m.
+For this signal to have reached Earth, the screening length must satisfy $\xi > r$,
+giving
+\begin{equation}
+    \frac{\beta}{d(1-\beta)} > \frac{r^2}{\ell^2}.
+\end{equation}
+
+Assuming a Planck-scale lattice spacing $\ell \sim 10^{-35}$~m and coordination
+number $d = 6$ (cubic lattice), this requires
+\begin{equation}
+    \beta > 1 - \frac{\ell^2}{d \, r^2} \approx 1 - 10^{-121}.
+\end{equation}
+
+This extraordinary constraint effectively forces $\beta = 1$ to observational
+precision. Strong coupling is not merely a convenient analytical limit but an
+empirical requirement: the universe exhibits long-range gravity, and any MPL
+substrate underlying it must have essentially perfect synchronization pressure
+between nodes.
 
 \end{document}
