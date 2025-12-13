@@ -55,12 +55,12 @@ def compute_phi_for_config(
     cx, cy = grid_size // 2, grid_size // 2
 
     # Source radius proportional to grid size (1% of grid)
-    mass_radius = max(3, grid_size // 100 * 2)
+    mass_radius = max(3, grid_size // 100 * 5)
 
     # Scale mass rate to maintain similar congestion level
     # Larger grids have more cells to fill, need proportionally more activity
     base_rate = 50.0
-    rate = base_rate * (grid_size / 100.0)
+    rate = base_rate #* (grid_size / 100.0)
 
     source_map = SourceMap(ny=grid_size, nx=grid_size, background_rate=0.01)
     source_map.add_uniform_disk(cx=cx, cy=cy, radius=mass_radius, rate=rate)
@@ -164,8 +164,8 @@ def main():
     print("=" * 70)
 
     # Configuration
-    betas = [0.9, 0.99, 0.999]
-    grid_sizes = [100, 250, 500, 1000]
+    betas = [0.9, 0.92, 0.94, 0.96, 0.98]
+    grid_sizes = [100, 250, 500]
 
     print(f"\nConfiguration:")
     print(f"  Betas: {betas}")

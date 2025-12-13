@@ -80,6 +80,7 @@ class BandwidthScheduler:
     _generation: np.ndarray = field(default=None, init=False)  # [ny, nx]
     _received_gen: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs]
     _message_arrival: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs] tick when msg arrives
+    _message_arrival_snapshot: np.ndarray = field(default=None, init=False)  # Read buffer for synchronous updates
 
     # For λ tracking
     _lambda_field: np.ndarray = field(default=None, init=False)
@@ -98,6 +99,7 @@ class BandwidthScheduler:
         # Bootstrap: all nodes have "received" generation 0 from all neighbors at tick 0
         self._received_gen = np.zeros((ny, nx, n_dirs), dtype=np.int64)
         self._message_arrival = np.zeros((ny, nx, n_dirs), dtype=np.int64)
+        self._message_arrival_snapshot = np.zeros((ny, nx, n_dirs), dtype=np.int64)
 
         # Initialize λ field
         self._lambda_field = np.zeros((ny, nx), dtype=np.float64)
@@ -140,6 +142,11 @@ class BandwidthScheduler:
         self.current_tick += 1
         ny, nx = self.lattice.shape
 
+        # Snapshot message arrivals for synchronous semantics:
+        # All nodes updating at tick t read from the state at end of tick t-1.
+        # This prevents update-order artifacts where early nodes affect late nodes.
+        np.copyto(self._message_arrival_snapshot, self._message_arrival)
+
         # Find and update all nodes that are ready
         ready_mask = self._next_update_tick <= self.current_tick
 
@@ -170,7 +177,10 @@ class BandwidthScheduler:
         local_ready = self.current_tick + push_ticks
 
         # neighbor_ready: latest message arrival from any neighbor
-        neighbor_ready = self._message_arrival[y, x, :].max()
+        # Read from SNAPSHOT to ensure synchronous semantics: all nodes updating
+        # at tick t see the same state (from end of tick t-1), regardless of
+        # the order they're processed within this tick.
+        neighbor_ready = self._message_arrival_snapshot[y, x, :].max()
 
         # Waiting time = how much later neighbors finish than me
         # β controls how much of this waiting I actually do
