@@ -28,12 +28,12 @@ def main():
     print("  GRAVITATIONAL FLYBY DEMONSTRATION")
     print("=" * 60)
 
-    # Setup grid and point source
-    grid_size = 140
-    cx, cy = 70, 70
+    # Setup grid and point source (scaled to 250x250)
+    grid_size = 250
+    cx, cy = 125, 125
 
     print("\n1. Setting up mass (small disk)...")
-    mass_radius = 5
+    mass_radius = 9
     source_map = SourceMap(ny=grid_size, nx=grid_size, background_rate=0.01)
     source_map.add_uniform_disk(cx=cx, cy=cy, radius=mass_radius, rate=50.0)
     print(f"   Disk source at ({cx}, {cy}), radius={mass_radius}, rate=50.0")
@@ -44,7 +44,7 @@ def main():
         neighborhood="von_neumann",
         boundary="absorbing",
         link_capacity=15.0,
-        spatial_sigma=2.0,  # Smoothing for gradients
+        spatial_sigma=3.5,  # Scaled for 250x250 grid
     )
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
@@ -70,12 +70,12 @@ def main():
     print("\n2. Establishing f field (5000 ticks)...")
     scheduler.run(5000)
     print(f"   f at center: {lattice.f[cy, cx]:.3f}")
-    print(f"   f at r=20: {lattice.f[cy, cx+20]:.3f}")
-    print(f"   f at r=50: {lattice.f[cy, cx+50]:.3f}")
+    print(f"   f at r=35: {lattice.f[cy, cx+35]:.3f}")
+    print(f"   f at r=90: {lattice.f[cy, cx+90]:.3f}")
 
     # Compute radial profile for analysis (start outside the mass)
     print("\n3. Computing radial profile...")
-    r_vals = np.arange(mass_radius + 1, 60, 1)  # Start outside mass
+    r_vals = np.arange(mass_radius + 1, 100, 1)  # Start outside mass
     lambda_profile = []
     for r in r_vals:
         samples = []
@@ -110,10 +110,10 @@ def main():
 
     # Create flyby particle
     print("\n4. Creating flyby particle...")
-    impact_param = 15  # Distance above center (closer for visible deflection)
+    impact_param = 18  # Distance above center (inside gravity well)
     particle = create_particle(
         "flyby",
-        x=10, y=cy + impact_param,
+        x=18, y=cy + impact_param,
         lattice=lattice,
         vx=1.0, vy=0.0,  # Moving right
         acceleration_scale=2.0,
@@ -124,7 +124,7 @@ def main():
 
     # Run simulation
     print("\n5. Running flyby simulation...")
-    sim_ticks = 100
+    sim_ticks = 180  # Scaled for larger grid
     for t in range(sim_ticks):
         particle.update(t)
 
@@ -177,11 +177,11 @@ def main():
     ax.set_title("Radial Profile: Screened Poisson λ(r) ∝ exp(-r/ξ)", fontsize=12)
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(0, 60)
+    ax.set_xlim(0, 100)
 
     # Add annotation about screening
     ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(β = {scheduler_config.beta})",
-                xy=(35, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
+                xy=(60, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     # Panel 4: Flyby trajectory
@@ -202,7 +202,7 @@ def main():
                marker="x", linewidths=3, label=f"Closest: {min_dist:.0f}", zorder=5)
 
     # Undeflected reference path
-    ax.plot([10, 130], [cy + impact_param, cy + impact_param], 'w--',
+    ax.plot([18, 232], [cy + impact_param, cy + impact_param], 'w--',
             linewidth=1.5, alpha=0.5, label="Undeflected")
 
     ax.set_title(f"Gravitational Flyby: Deflection = {deflection:.0f}°", fontsize=12)
@@ -210,7 +210,7 @@ def main():
     ax.set_ylabel("y")
     ax.legend(loc="upper right", fontsize=9)
     ax.set_xlim(0, grid_size)
-    ax.set_ylim(30, 110)
+    ax.set_ylim(55, 195)
 
     fig.suptitle("Gravitational Lensing from Bandwidth Limits", fontsize=14, fontweight='bold')
     fig.tight_layout()
