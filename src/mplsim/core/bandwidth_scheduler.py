@@ -80,6 +80,7 @@ class BandwidthScheduler:
     _generation: np.ndarray = field(default=None, init=False)  # [ny, nx]
     _received_gen: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs]
     _message_arrival: np.ndarray = field(default=None, init=False)  # [ny, nx, n_dirs] tick when msg arrives
+    _message_arrival_snapshot: np.ndarray = field(default=None, init=False)  # Read buffer for synchronous updates
 
     # For λ tracking
     _lambda_field: np.ndarray = field(default=None, init=False)
@@ -98,6 +99,7 @@ class BandwidthScheduler:
         # Bootstrap: all nodes have "received" generation 0 from all neighbors at tick 0
         self._received_gen = np.zeros((ny, nx, n_dirs), dtype=np.int64)
         self._message_arrival = np.zeros((ny, nx, n_dirs), dtype=np.int64)
+        self._message_arrival_snapshot = np.zeros((ny, nx, n_dirs), dtype=np.int64)
 
         # Initialize λ field
         self._lambda_field = np.zeros((ny, nx), dtype=np.float64)
@@ -136,78 +138,83 @@ class BandwidthScheduler:
         }
 
     def _tick(self):
-        """Execute one global tick."""
+        """Execute one global tick (vectorized for performance)."""
         self.current_tick += 1
-        ny, nx = self.lattice.shape
-
-        # Find and update all nodes that are ready
-        ready_mask = self._next_update_tick <= self.current_tick
-
-        # Process ready nodes
-        for y in range(ny):
-            for x in range(nx):
-                if ready_mask[y, x]:
-                    self._update_node(y, x)
-
-    def _update_node(self, y: int, x: int):
-        """Update a single node with β-weighted neighbor waiting."""
         ny, nx = self.lattice.shape
         config = self.config
 
-        # === COMPUTE MESSAGE SIZE (bandwidth constraint) ===
-        rate = self.source_map.rates[y, x]
+        # Snapshot message arrivals for synchronous semantics:
+        # All nodes updating at tick t read from the state at end of tick t-1.
+        np.copyto(self._message_arrival_snapshot, self._message_arrival)
+
+        # Find ready nodes
+        ready_mask = self._next_update_tick <= self.current_tick
+
+        # === COMPUTE MESSAGE SIZES (vectorized) ===
         if config.stochastic_messages:
-            poisson_mean = rate * config.message_rate_scale
-            message_size = np.random.poisson(poisson_mean)
+            poisson_means = self.source_map.rates * config.message_rate_scale
+            message_sizes = np.random.poisson(poisson_means)
         else:
-            message_size = rate * config.message_rate_scale
+            message_sizes = self.source_map.rates * config.message_rate_scale
 
-        push_ticks = int(np.ceil(message_size / config.bandwidth_per_tick))
-        push_ticks = max(push_ticks, 1)
+        push_ticks = np.maximum(1, np.ceil(message_sizes / config.bandwidth_per_tick).astype(np.int64))
 
-        # === COMPUTE WAITING TIME FROM NEIGHBORS ===
-        # local_ready: when I finish my own work
+        # === COMPUTE WAITING (vectorized) ===
         local_ready = self.current_tick + push_ticks
+        neighbor_ready = self._message_arrival_snapshot.max(axis=2)  # [ny, nx]
+        neighbor_delay = np.maximum(0, neighbor_ready - local_ready)
+        actual_wait = (config.beta * neighbor_delay).astype(np.int64)
 
-        # neighbor_ready: latest message arrival from any neighbor
-        neighbor_ready = self._message_arrival[y, x, :].max()
-
-        # Waiting time = how much later neighbors finish than me
-        # β controls how much of this waiting I actually do
-        neighbor_delay = max(0, neighbor_ready - local_ready)
-        actual_wait = int(config.beta * neighbor_delay)
-
-        # === SEND MESSAGES TO NEIGHBORS ===
-        # My message arrives after: my_work + my_wait + propagation
+        # === MESSAGE ARRIVAL TIMES ===
         message_arrival_tick = self.current_tick + push_ticks + actual_wait + config.propagation_delay
 
-        for direction in self.lattice.directions:
+        # === SEND TO NEIGHBORS (vectorized via roll) ===
+        # For each direction, roll the arrival times to neighbor positions
+        # and update only where the source node was ready
+        for dir_idx, direction in enumerate(self.lattice.directions):
             dy, dx = self._directions[direction]
-            neighbor_y = (y + dy) % ny
-            neighbor_x = (x + dx) % nx
-
             opposite_dir = self._get_opposite_direction(direction)
             opp_idx = self._dir_to_idx[opposite_dir]
-            self._message_arrival[neighbor_y, neighbor_x, opp_idx] = message_arrival_tick
 
-        # === COMPUTE NEXT UPDATE TIME ===
-        self._next_update_tick[y, x] = local_ready + actual_wait
+            # Roll arrival times: arr[y,x] -> arr[(y+dy)%ny, (x+dx)%nx]
+            shifted_arrival = np.roll(np.roll(message_arrival_tick, dy, axis=0), dx, axis=1)
+            shifted_ready = np.roll(np.roll(ready_mask, dy, axis=0), dx, axis=1)
 
-        # === COMPUTE f AND λ ===
-        # λ depends on TOTAL delay: own work + waiting for neighbors
-        last_update = self._last_update_tick[y, x]
-        actual_interval = self.current_tick - last_update
+            # Update neighbor's arrival from this direction where source was ready
+            self._message_arrival[:, :, opp_idx] = np.where(
+                shifted_ready,
+                shifted_arrival,
+                self._message_arrival[:, :, opp_idx]
+            )
 
-        if actual_interval > 0:
-            local_f = min(1.0, config.canonical_interval / actual_interval)
-            lambda_local = 1.0 - local_f
+        # === UPDATE NEXT UPDATE TIME ===
+        next_update = local_ready + actual_wait
+        self._next_update_tick = np.where(ready_mask, next_update, self._next_update_tick)
 
-            alpha = config.f_smoothing_alpha
-            self._lambda_field[y, x] = (1 - alpha) * self._lambda_field[y, x] + alpha * lambda_local
-            self.lattice.f[y, x] = (1 - alpha) * self.lattice.f[y, x] + alpha * local_f
+        # === COMPUTE f AND λ (vectorized) ===
+        actual_interval = self.current_tick - self._last_update_tick
+        update_mask = ready_mask & (actual_interval > 0)
 
-        self._last_update_tick[y, x] = self.current_tick
-        self.total_updates += 1
+        # Avoid division by zero
+        safe_interval = np.maximum(1, actual_interval)
+        local_f = np.minimum(1.0, config.canonical_interval / safe_interval)
+        lambda_local = 1.0 - local_f
+
+        alpha = config.f_smoothing_alpha
+        self._lambda_field = np.where(
+            update_mask,
+            (1 - alpha) * self._lambda_field + alpha * lambda_local,
+            self._lambda_field
+        )
+        self.lattice.f = np.where(
+            update_mask,
+            (1 - alpha) * self.lattice.f + alpha * local_f,
+            self.lattice.f
+        )
+
+        # Update last_update_tick and count
+        self._last_update_tick = np.where(ready_mask, self.current_tick, self._last_update_tick)
+        self.total_updates += int(ready_mask.sum())
 
     def _get_opposite_direction(self, direction: str) -> str:
         """Get opposite direction."""

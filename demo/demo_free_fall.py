@@ -27,10 +27,10 @@ def main():
     print("  GRAVITATIONAL ORBIT DEMONSTRATION")
     print("=" * 60)
 
-    # Setup grid and mass
-    grid_size = 140
-    cx, cy = 70, 70
-    mass_radius = 8
+    # Setup grid and mass (scaled to 250x250)
+    grid_size = 250
+    cx, cy = 125, 125
+    mass_radius = 14
     mass_rate = 40.0
 
     print("\n1. Setting up mass (uniform disk)...")
@@ -44,7 +44,7 @@ def main():
         neighborhood="von_neumann",
         boundary="absorbing",
         link_capacity=15.0,
-        spatial_sigma=2.0,
+        spatial_sigma=3.5,  # Scaled for 250x250 grid
     )
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
@@ -70,11 +70,11 @@ def main():
     scheduler.run(5000)
     print(f"   f at center: {lattice.f[cy, cx]:.3f}")
     print(f"   f at surface (r={mass_radius}): {lattice.f[cy, cx+mass_radius]:.3f}")
-    print(f"   f at r=30: {lattice.f[cy, cx+30]:.3f}")
+    print(f"   f at r=50: {lattice.f[cy, cx+50]:.3f}")
 
     # Compute radial profile for analysis (start outside the mass)
     print("\n3. Computing radial profile...")
-    r_vals = np.arange(mass_radius + 1, 60, 1)
+    r_vals = np.arange(mass_radius + 1, 100, 1)
     lambda_profile = []
     for r in r_vals:
         samples = []
@@ -109,7 +109,7 @@ def main():
 
     # Create orbital particle starting inside the gravity well
     print("\n4. Creating orbital particle...")
-    start_distance = 15  # Inside gravity well (where λ > 0)
+    start_distance = 18  # Inside gravity well (where λ > 0)
     particle = create_particle(
         "orbit",
         x=cx + start_distance, y=cy,
@@ -173,10 +173,10 @@ def main():
     ax.set_title("Radial Profile: Screened Poisson λ(r) ∝ exp(-r/ξ)", fontsize=12)
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(0, 60)
+    ax.set_xlim(0, 100)
 
     ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(β = {scheduler_config.beta})",
-                xy=(35, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
+                xy=(60, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     # Panel 4: Orbital trajectory
@@ -208,8 +208,8 @@ def main():
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.legend(loc="upper right", fontsize=9)
-    ax.set_xlim(20, 120)
-    ax.set_ylim(20, 120)
+    ax.set_xlim(35, 215)
+    ax.set_ylim(35, 215)
 
     fig.suptitle("Gravitational Orbit from Bandwidth Limits", fontsize=14, fontweight='bold')
     fig.tight_layout()
