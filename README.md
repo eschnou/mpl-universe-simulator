@@ -37,6 +37,30 @@ No Poisson equations in the engine. Gravity emerges from queuing dynamics.
 
 ---
 
+## The Update Rule
+
+The engine uses a simple local update rule (Jacobi relaxation):
+
+```
+λ_new(x,y) = local_stall(x,y) + β × [λ(x,y-1) + λ(x,y+1) + λ(x-1,y) + λ(x+1,y)] / 4
+```
+
+Where:
+- **local_stall**: 1 if message_size > capacity, 0 otherwise (stochastic)
+- **β**: sync coupling strength (0.999 typical)
+- **λ**: slowness field (gravity potential analog)
+- **f = 1 - λ**: update fraction (what clocks measure)
+
+**How the gradient emerges:**
+1. Only nodes at the mass generate stalls (high activity → messages exceed capacity)
+2. Information propagates at 1 cell/tick (finite "speed of light")
+3. With β < 1, there's screening: `λ(r) ~ exp(-r/ξ)` where `ξ ~ 1/√(1-β)`
+4. Steady state = balance between source pumping and screening decay
+
+**No differential equations are solved** — just local message passing with finite bandwidth. The screened Poisson field emerges from the dynamics.
+
+---
+
 ## Current Status
 
 **Completed (Phases 0–5):**
@@ -62,7 +86,10 @@ poetry install        # or: pip install -e ".[dev]"
 ## Running the Demos
 
 ```bash
-# Free fall: particles released around a central mass
+# Radial profile: simplest test - central mass and gravity field
+poetry run python demo/demo_radial_profile.py
+
+# Free fall: orbital motion around a central mass
 poetry run python demo/demo_free_fall.py
 
 # Flyby: gravitational deflection of passing particles
@@ -96,7 +123,7 @@ poetry run pytest tests/integration/test_free_fall.py -v
 src/mplsim/
 ├── core/                       # Engine primitives (THE physics)
 │   ├── lattice.py              # 2D grid with f(x) field
-│   ├── theoretical_scheduler.py # TheoreticalScheduler (λ = γa + β⟨λ⟩)
+│   ├── bandwidth_scheduler.py  # BandwidthScheduler (the update rule)
 │   ├── kernel.py               # LoadGeneratorKernel (message traffic)
 │   ├── source_map.py           # Activity distributions (mass)
 │   └── messages.py             # Queue and capacity management

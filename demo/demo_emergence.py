@@ -50,19 +50,14 @@ def main():
     source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=2.0, sigma=8.0)
 
     # Use BandwidthScheduler for TRUE causal emergence
-    # λ emerges from actual waiting: λ = (actual_interval - canonical) / canonical
-    # Message sizes are STOCHASTIC: L ~ Poisson(activity * message_rate_scale)
-    # For weak-congestion: mean message size should sometimes exceed capacity
+    # λ emerges from: local_stall + β·⟨λ⟩_neighbors
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
-    beta = 0.9  # Sync coupling <1 for proper gradient diffusion (screened Poisson)
+    beta = 0.9  # Sync coupling <1 for screened Poisson
     scheduler_config = BandwidthSchedulerConfig(
-        canonical_interval=10,      # Baseline ticks between updates
-        bandwidth_per_tick=1.0,     # Link capacity per tick
-        propagation_delay=1,        # Message travel time
-        f_smoothing_alpha=0.05,     # Slower smoothing for stable convergence
-        beta=beta,                  # β<1: delays attenuate with distance
-        message_rate_scale=8.0,     # Poisson mean = activity * scale
-        stochastic_messages=True,   # Probabilistic message sizes per paper
+        link_capacity=10.0,
+        message_scale=8.0,
+        beta=beta,
+        stochastic_messages=True,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -74,7 +69,7 @@ def main():
     print(f"   Grid size: {nx}x{ny}")
     print(f"   Source: Gaussian at center, peak_rate=2.0, sigma=8")
     print(f"   BandwidthScheduler: beta={beta}, stochastic={scheduler_config.stochastic_messages}")
-    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.message_rate_scale}), capacity={scheduler_config.bandwidth_per_tick}/tick")
+    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.message_scale}), capacity={scheduler_config.link_capacity}")
 
     # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
     print("\n2. Running engine to steady state...")

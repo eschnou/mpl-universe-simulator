@@ -27,11 +27,14 @@ def main():
     print("  GRAVITATIONAL ORBIT DEMONSTRATION")
     print("=" * 60)
 
-    # Setup grid and mass (scaled to 250x250)
-    grid_size = 250
-    cx, cy = 125, 125
-    mass_radius = 14
-    mass_rate = 40.0
+    # Setup grid and mass (same settings as radial demo)
+    grid_size = 150
+    cx, cy = grid_size // 2, grid_size // 2
+
+    # Mass parameters (same as radial demo)
+    mass_radius = 10
+    mass_rate = 1.0
+    beta = 0.999
 
     print("\n1. Setting up mass (uniform disk)...")
     source_map = SourceMap(ny=grid_size, nx=grid_size, background_rate=0.01)
@@ -43,19 +46,17 @@ def main():
         ny=grid_size,
         neighborhood="von_neumann",
         boundary="absorbing",
-        link_capacity=15.0,
-        spatial_sigma=3.5,  # Scaled for 250x250 grid
+        link_capacity=10.0,
+        spatial_sigma=2.0,
     )
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
+    # BandwidthScheduler with β≈1 for long-range gravity
     scheduler_config = BandwidthSchedulerConfig(
-        canonical_interval=10,
-        bandwidth_per_tick=1.0,
-        propagation_delay=1,
-        f_smoothing_alpha=0.03,
-        beta=0.9,
-        message_rate_scale=10.0,
+        link_capacity=10.0,
+        message_scale=5.0,
+        beta=beta,
         stochastic_messages=True,
     )
     scheduler = BandwidthScheduler(
@@ -66,15 +67,15 @@ def main():
     )
 
     # Establish f field
-    print("\n2. Establishing f field (5000 ticks)...")
-    scheduler.run(5000)
+    print("\n2. Establishing f field (10000 ticks)...")
+    scheduler.run(10000)
     print(f"   f at center: {lattice.f[cy, cx]:.3f}")
     print(f"   f at surface (r={mass_radius}): {lattice.f[cy, cx+mass_radius]:.3f}")
-    print(f"   f at r=50: {lattice.f[cy, cx+50]:.3f}")
+    print(f"   f at r=40: {lattice.f[cy, cx+40]:.3f}")
 
     # Compute radial profile for analysis (start outside the mass)
     print("\n3. Computing radial profile...")
-    r_vals = np.arange(mass_radius + 1, 100, 1)
+    r_vals = np.arange(mass_radius + 1, 60, 1)
     lambda_profile = []
     for r in r_vals:
         samples = []
@@ -109,12 +110,12 @@ def main():
 
     # Create orbital particle starting inside the gravity well
     print("\n4. Creating orbital particle...")
-    start_distance = 18  # Inside gravity well (where λ > 0)
+    start_distance = 15  # Inside gravity well (where λ > 0)
     particle = create_particle(
         "orbit",
         x=cx + start_distance, y=cy,
         lattice=lattice,
-        vx=0.0, vy=0.8,  # Tangential velocity (moving up)
+        vx=0.0, vy=0.6,  # Tangential velocity (moving up)
         acceleration_scale=2.0,
     )
     print(f"   Start: ({particle.px:.0f}, {particle.py:.0f})")
@@ -123,7 +124,7 @@ def main():
 
     # Run simulation
     print("\n5. Running orbital simulation...")
-    sim_ticks = 500
+    sim_ticks = 400
     for t in range(sim_ticks):
         particle.update(t)
 
@@ -173,10 +174,10 @@ def main():
     ax.set_title("Radial Profile: Screened Poisson λ(r) ∝ exp(-r/ξ)", fontsize=12)
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(0, 100)
+    ax.set_xlim(0, 60)
 
-    ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(β = {scheduler_config.beta})",
-                xy=(60, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
+    ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(β = {beta})",
+                xy=(35, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     # Panel 4: Orbital trajectory
@@ -208,8 +209,8 @@ def main():
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.legend(loc="upper right", fontsize=9)
-    ax.set_xlim(35, 215)
-    ax.set_ylim(35, 215)
+    ax.set_xlim(40, 110)
+    ax.set_ylim(40, 110)
 
     fig.suptitle("Gravitational Orbit from Bandwidth Limits", fontsize=14, fontweight='bold')
     fig.tight_layout()
