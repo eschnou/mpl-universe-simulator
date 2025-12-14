@@ -50,14 +50,15 @@ def main():
     source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=2.0, sigma=8.0)
 
     # Use BandwidthScheduler for TRUE causal emergence
-    # λ emerges from: local_stall + β·⟨λ⟩_neighbors
+    # Local rule: send_interval = max(local_time, avg_neighbor_gap × damping)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
-    beta = 0.9  # Sync coupling <1 for screened Poisson
+    damping = 0.9  # Sync coupling <1 for screened Poisson
     scheduler_config = BandwidthSchedulerConfig(
-        link_capacity=10.0,
-        message_scale=8.0,
-        beta=beta,
-        stochastic_messages=True,
+        bandwidth=8.0,
+        data_scale=8.0,
+        damping=damping,
+        base_interval=10.0,
+        stochastic=True,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -68,8 +69,8 @@ def main():
 
     print(f"   Grid size: {nx}x{ny}")
     print(f"   Source: Gaussian at center, peak_rate=2.0, sigma=8")
-    print(f"   BandwidthScheduler: beta={beta}, stochastic={scheduler_config.stochastic_messages}")
-    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.message_scale}), capacity={scheduler_config.link_capacity}")
+    print(f"   BandwidthScheduler: damping={damping}, stochastic={scheduler_config.stochastic}")
+    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.data_scale}), bandwidth={scheduler_config.bandwidth}")
 
     # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
     print("\n2. Running engine to steady state...")
@@ -79,7 +80,6 @@ def main():
     print(f"   Completed {n_warmup} ticks, {stats['total_updates']} node updates")
     print(f"   Mean f: {stats['mean_f']:.4f}")
     print(f"   Min f:  {stats['min_f']:.4f}")
-    print(f"   Max λ:  {stats['max_lambda']:.4f}")
 
     # === VERIFY PAPER'S LINEAR EQUATION: λ = γa + β⟨λ⟩ ===
     print("\n3. Testing paper's self-consistency equation: λ = γa + β⟨λ⟩...")
@@ -95,8 +95,8 @@ def main():
         np.roll(lambda_sim, -1, axis=1)    # W
     ) / 4.0
 
-    # Normalized activity (like in TheoreticalScheduler)
-    a_norm = source_map.rates / lattice.config.link_capacity
+    # Normalized activity
+    a_norm = source_map.rates / scheduler_config.bandwidth
 
     # Fit: λ_sim = γ * a_norm + β * ⟨λ⟩
     # This is a 2-parameter linear regression: λ = γ*a + β*⟨λ⟩

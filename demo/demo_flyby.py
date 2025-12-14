@@ -32,10 +32,10 @@ def main():
     grid_size = 150
     cx, cy = grid_size // 2, grid_size // 2
 
-    # Mass parameters (same as radial demo)
+    # Mass parameters - higher rate for longer-range gravity
     mass_radius = 10
-    mass_rate = 1.0
-    beta = 0.999
+    mass_rate = 3.0  # Higher rate → more congestion → longer-range gravity
+    damping = 0.95
 
     print("\n1. Setting up mass (uniform disk)...")
     source_map = SourceMap(ny=grid_size, nx=grid_size, background_rate=0.01)
@@ -53,12 +53,13 @@ def main():
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
-    # BandwidthScheduler with β≈1 for long-range gravity
+    # BandwidthScheduler with local rule: send_interval = max(local_time, avg_gap × damping)
     scheduler_config = BandwidthSchedulerConfig(
-        link_capacity=10.0,
-        message_scale=5.0,
-        beta=beta,
-        stochastic_messages=True,
+        bandwidth=8.0,
+        data_scale=8.0,
+        damping=damping,
+        base_interval=10.0,
+        stochastic=True,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -116,7 +117,7 @@ def main():
         "flyby",
         x=10, y=cy + impact_param,
         lattice=lattice,
-        vx=1.0, vy=0.0,  # Moving right
+        vx=2.0, vy=0.0,  # Moving right
         acceleration_scale=2.0,
     )
     print(f"   Start: ({particle.px:.0f}, {particle.py:.0f})")
@@ -125,7 +126,7 @@ def main():
 
     # Run simulation
     print("\n5. Running flyby simulation...")
-    sim_ticks = 120  # Scaled for grid size
+    sim_ticks = 60  # Scaled for grid size
     for t in range(sim_ticks):
         particle.update(t)
 
@@ -181,7 +182,7 @@ def main():
     ax.set_xlim(0, 60)
 
     # Add annotation about screening
-    ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(β = {beta})",
+    ax.annotate(f"Screening length ξ ≈ {xi_fit:.0f}\n(damping = {damping})",
                 xy=(35, max(0.02, lambda_profile[5] if len(lambda_profile) > 5 else 0.05)), fontsize=10, style='italic',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 

@@ -6,6 +6,7 @@ Simple demonstration showing how a central mass creates a gravity well:
 1. Set up a central mass (uniform disk)
 2. Run the engine to steady state
 3. Plot radial profiles of f(r) and λ(r)
+4. Fit the effective β from the steady-state equation
 
 This is the simplest test of emergent gravity from bandwidth limits.
 """
@@ -44,6 +45,35 @@ def compute_radial_profile(field: np.ndarray, center: tuple[int, int], max_r: in
     return r_vals, np.array(profile)
 
 
+def fit_effective_beta(lambda_field: np.ndarray, local_stall_field: np.ndarray) -> float:
+    """
+    Fit the effective β from the steady-state equation:
+        λ(x) = local_stall(x) + β × ⟨λ⟩_neighbors(x)
+
+    Rearranged: β = (λ - local_stall) / ⟨λ⟩_neighbors
+
+    We fit this over all nodes where local_stall ≈ 0 (outside mass).
+    """
+    # Compute neighbor average of lambda
+    neighbor_avg = (
+        np.roll(lambda_field, 1, axis=0) + np.roll(lambda_field, -1, axis=0) +
+        np.roll(lambda_field, 1, axis=1) + np.roll(lambda_field, -1, axis=1)
+    ) / 4.0
+
+    # Only fit where local_stall is negligible and neighbor_avg > 0
+    mask = (local_stall_field < 0.01) & (neighbor_avg > 0.001) & (lambda_field > 0.001)
+
+    if mask.sum() < 10:
+        return np.nan
+
+    # β = (λ - local_stall) / ⟨λ⟩_neighbors
+    # Since local_stall ≈ 0 in masked region: β ≈ λ / ⟨λ⟩_neighbors
+    beta_estimates = lambda_field[mask] / neighbor_avg[mask]
+
+    # Return median (robust to outliers)
+    return float(np.median(beta_estimates))
+
+
 def main():
     np.random.seed(42)
 
@@ -72,21 +102,23 @@ def main():
         nx=grid_size,
         ny=grid_size,
         neighborhood="von_neumann",
-        boundary="periodic",
+        boundary="absorbing",
         link_capacity=10.0,
         spatial_sigma=2.0,
     )
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
-    # Scheduler with β parameter for sync coupling
-    # Tuned to keep max λ < 0.5 (where local observation rule works)
-    beta = 1.0
+    # Scheduler with damping for sync coupling
+    # send_interval = max(local_time, avg_neighbor_gap × damping)
+    # base_interval=10 gives better temporal resolution for gap measurement
+    damping = 1.0
     scheduler_config = BandwidthSchedulerConfig(
-        link_capacity=10.0,
-        message_scale=8.0,  # Gives ~20% stall prob at mass, λ < 0.5
-        beta=beta,
-        stochastic_messages=True,
+        bandwidth=8.0,       # Data units per base_interval
+        data_scale=50.0,      # Mass rate=1.0 → mean data=8 → local_time=10×8/8=10
+        damping=damping,
+        base_interval=50.0,  # f=1 means 1 update per 10 ticks
+        stochastic=True,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -95,20 +127,18 @@ def main():
         config=scheduler_config,
     )
 
-    print(f"   Scheduler: beta={beta}, link_capacity={scheduler_config.link_capacity}")
-    print(f"   Message size: Poisson(activity * {scheduler_config.message_scale})")
+    print(f"   Scheduler: damping={damping}, bandwidth={scheduler_config.bandwidth}")
+    print(f"   Message size: Poisson(activity * {scheduler_config.data_scale})")
 
     # Compute theoretical stalling probabilities
     print("\n2. Bandwidth stalling analysis (theoretical)...")
     from scipy.stats import poisson
 
-    capacity = scheduler_config.link_capacity
-    scale = scheduler_config.message_scale
+    capacity = scheduler_config.bandwidth
+    scale = scheduler_config.data_scale
 
     # For each activity level, compute P(message_size > capacity)
-    # Message size ~ Poisson(activity * scale)
     activity_levels = [0.01, 0.1, 0.5, 1.0, 2.0, 5.0, mass_rate]
-    # Remove duplicates and sort
     activity_levels = sorted(set(activity_levels))
 
     print(f"   Link capacity: {capacity}")
@@ -119,7 +149,6 @@ def main():
 
     for act in activity_levels:
         mean_msg = act * scale
-        # P(X > capacity) = 1 - P(X <= capacity) = 1 - CDF(capacity)
         p_exceed = 1.0 - poisson.cdf(capacity, mean_msg)
         label = f"{act:.2f}"
         if act == mass_rate:
@@ -142,15 +171,11 @@ def main():
     # Fit exponential decay (screened Poisson) - only outside mass
     from scipy.optimize import curve_fit
 
-    # λ(r) = λ_surface × exp(-(r - R)/ξ) for r > R
-    # This anchors at mass surface, no singularity
     def exp_decay_from_surface(r, lambda_surface, xi):
         return lambda_surface * np.exp(-(r - mass_radius) / xi)
 
-    # Fit only outside the mass surface
     mask = (r_vals > mass_radius) & (lambda_profile > 0.001)
     try:
-        # Initial guess: surface λ from data, reasonable ξ
         lambda_at_surface = lambda_profile[r_vals >= mass_radius][0] if any(r_vals >= mass_radius) else 0.1
         popt, _ = curve_fit(
             exp_decay_from_surface, r_vals[mask], lambda_profile[mask],
@@ -160,7 +185,6 @@ def main():
         )
         lambda_surface_fit, xi_fit = popt
         fit_curve = exp_decay_from_surface(r_vals, *popt)
-        # Only show fit for r > mass_radius
         fit_curve[r_vals < mass_radius] = np.nan
 
         r2 = 1 - np.sum((lambda_profile[mask] - exp_decay_from_surface(r_vals[mask], *popt))**2) / \
@@ -175,8 +199,30 @@ def main():
         lambda_surface_fit = None
         print(f"   Fit failed: {e}")
 
+    # Fit effective β from the paper's equation
+    print("\n5. Fitting effective β from steady-state equation...")
+    print("   λ(x) = local_stall(x) + β × ⟨λ⟩_neighbors(x)")
+
+    # Create local stall field (where activity causes stalls)
+    # local_stall > 0 inside mass, ≈ 0 outside
+    local_stall_field = np.zeros_like(lattice.f)
+    yy, xx = np.ogrid[:grid_size, :grid_size]
+    dist_from_center = np.sqrt((xx - cx)**2 + (yy - cy)**2)
+    inside_mass = dist_from_center <= mass_radius
+    # Estimate local stall from activity
+    from scipy.stats import poisson as poisson_dist
+    local_stall_field[inside_mass] = 1.0 - poisson_dist.cdf(capacity, mass_rate * scale)
+
+    lambda_field = 1.0 - lattice.f_smooth
+    effective_beta = fit_effective_beta(lambda_field, local_stall_field)
+
+    print(f"   Input damping: {damping}")
+    print(f"   Fitted effective β:   {effective_beta:.3f}")
+    if not np.isnan(effective_beta):
+        print(f"   Ratio (fitted/input): {effective_beta / damping:.2f}")
+
     # Create visualization
-    print("\n5. Creating visualization...")
+    print("\n6. Creating visualization...")
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
     # Panel 1: Activity map
@@ -211,23 +257,40 @@ def main():
     ax.set_xlim(mass_radius, max(r_vals))
     ax.set_ylim(0, 1.05)
 
-    # Panel 4: λ(r) radial profile with fit (only outside mass)
+    # Panel 4: λ(r) radial profile with fit and theoretical 2D gravity
     ax = axes[1, 1]
     outside_mask = r_vals >= mass_radius
-    ax.plot(r_vals[outside_mask], lambda_profile[outside_mask], 'ko-', markersize=3, label='λ(r) observed')
+    r_outside = r_vals[outside_mask]
+    lambda_outside = lambda_profile[outside_mask]
+
+    ax.plot(r_outside, lambda_outside, 'ko-', markersize=3, label='λ(r) simulated')
+
+    # Theoretical 2D unscreened gravity: λ ∝ log(r_ref/r)
+    # Normalized to match simulation at mass surface
+    if len(lambda_outside) > 0 and lambda_outside[0] > 0:
+        lambda_surface = lambda_outside[0]
+        r_ref = max(r_vals) * 2  # Reference radius (arbitrary, affects normalization)
+        lambda_2d_theory = lambda_surface * np.log(r_ref / r_outside) / np.log(r_ref / mass_radius)
+        lambda_2d_theory = np.maximum(lambda_2d_theory, 0)  # Clip negative values
+        ax.plot(r_outside, lambda_2d_theory, 'b--', linewidth=2,
+                label='2D Newtonian: λ ∝ log(1/r)')
+
+    # Exponential fit (screened)
     if fit_curve is not None:
         fit_outside = fit_curve[outside_mask]
-        ax.plot(r_vals[outside_mask], fit_outside, 'r-', linewidth=2,
-                label=f'Fit: ξ={xi_fit:.0f}, λ_s={lambda_surface_fit:.2f}')
+        ax.plot(r_outside, fit_outside, 'r-', linewidth=2,
+                label=f'Screened fit: ξ={xi_fit:.0f}')
+
     ax.axhline(y=0, color='gray', linestyle=':', alpha=0.5)
-    ax.set_xlabel("Distance r from mass surface")
+    ax.set_xlabel("Distance r from center")
     ax.set_ylabel("λ(r) = 1 - f(r)")
-    ax.set_title(f"Radial Profile: λ(r) outside mass (β={beta})")
+    beta_str = f"β_eff={effective_beta:.2f}" if not np.isnan(effective_beta) else "β_eff=?"
+    ax.set_title(f"Radial Profile: λ(r) outside mass ({beta_str})")
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
     ax.set_xlim(mass_radius, max(r_vals))
 
-    fig.suptitle(f"Emergent Gravity from Bandwidth Limits\nβ={beta}, Mass rate={mass_rate}",
+    fig.suptitle(f"Emergent Gravity from Bandwidth Limits\ndamping={damping}, β_eff={effective_beta:.2f}, Mass rate={mass_rate}",
                  fontsize=14, fontweight='bold')
     fig.tight_layout()
 
@@ -246,7 +309,10 @@ def main():
     print(f"  • Central mass creates congestion → low f near center")
     print(f"  • λ(r) = 1 - f(r) is the 'slowness' field (gravity analog)")
     print(f"  • Screened Poisson: λ(r) ∝ exp(-r/ξ) with ξ ≈ {xi_fit:.0f}" if xi_fit else "  • Fit failed")
-    print(f"  • f recovers to ~1 at r > {2*xi_fit:.0f}" if xi_fit else "")
+    print(f"  • f recovers to ~1 at r ≈ {mass_radius + 5*xi_fit:.0f} (surface + 5ξ)" if xi_fit else "")
+    print()
+    print(f"  • Input damping: {damping}")
+    print(f"  • Fitted effective β:   {effective_beta:.3f}" if not np.isnan(effective_beta) else "  • β fit failed")
     print("=" * 60)
 
 
