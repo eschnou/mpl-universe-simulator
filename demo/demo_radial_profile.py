@@ -80,10 +80,11 @@ def main():
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
     # Scheduler with β parameter for sync coupling
-    beta = 0.999
+    # Tuned to keep max λ < 0.5 (where local observation rule works)
+    beta = 1.0
     scheduler_config = BandwidthSchedulerConfig(
         link_capacity=10.0,
-        message_scale=5.0,
+        message_scale=8.0,  # Gives ~20% stall prob at mass, λ < 0.5
         beta=beta,
         stochastic_messages=True,
     )
