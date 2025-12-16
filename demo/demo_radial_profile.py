@@ -112,7 +112,7 @@ def main():
     # Scheduler with damping for sync coupling
     # send_interval = max(local_time, avg_neighbor_gap × damping)
     # base_interval=10 gives better temporal resolution for gap measurement
-    damping = 1.0
+    damping = 0.999
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,       # Data units per base_interval
         data_scale=50.0,      # Mass rate=1.0 → mean data=8 → local_time=10×8/8=10
@@ -244,12 +244,27 @@ def main():
     ax.set_ylabel("y")
     plt.colorbar(im, ax=ax, label="f(x)")
 
-    # Panel 3: f(r) radial profile (only outside mass)
+    # Panel 3: f(r) radial profile (only outside mass) with Newtonian comparison
     ax = axes[1, 0]
     outside_mask = r_vals >= mass_radius
-    ax.plot(r_vals[outside_mask], f_profile[outside_mask], 'b-', linewidth=2, label='f(r)')
+    r_outside = r_vals[outside_mask]
+    f_outside = f_profile[outside_mask]
+
+    ax.plot(r_outside, f_outside, 'b-', linewidth=2, label='f(r) simulated')
+
+    # Theoretical 2D Newtonian gravity: f ∝ 1 - log(r_ref/r)
+    # f is low near mass, approaches 1 far away
+    if len(f_outside) > 0 and f_outside[0] < 1:
+        f_surface = f_outside[0]
+        r_ref = max(r_vals) * 2  # Reference radius
+        # f(r) rises from f_surface toward 1 following log curve
+        f_2d_theory = f_surface + (1 - f_surface) * (1 - np.log(r_ref / r_outside) / np.log(r_ref / mass_radius))
+        f_2d_theory = np.clip(f_2d_theory, 0, 1)
+        ax.plot(r_outside, f_2d_theory, 'g--', linewidth=2,
+                label='2D Newtonian: f ∝ 1 - log(1/r)')
+
     ax.axhline(y=1.0, color='gray', linestyle=':', alpha=0.5)
-    ax.set_xlabel("Distance r from mass surface")
+    ax.set_xlabel("Distance r from center")
     ax.set_ylabel("f(r)")
     ax.set_title("Radial Profile: f(r) outside mass")
     ax.legend()
@@ -257,23 +272,13 @@ def main():
     ax.set_xlim(mass_radius, max(r_vals))
     ax.set_ylim(0, 1.05)
 
-    # Panel 4: λ(r) radial profile with fit and theoretical 2D gravity
+    # Panel 4: λ(r) radial profile with exponential fit
     ax = axes[1, 1]
     outside_mask = r_vals >= mass_radius
     r_outside = r_vals[outside_mask]
     lambda_outside = lambda_profile[outside_mask]
 
     ax.plot(r_outside, lambda_outside, 'ko-', markersize=3, label='λ(r) simulated')
-
-    # Theoretical 2D unscreened gravity: λ ∝ log(r_ref/r)
-    # Normalized to match simulation at mass surface
-    if len(lambda_outside) > 0 and lambda_outside[0] > 0:
-        lambda_surface = lambda_outside[0]
-        r_ref = max(r_vals) * 2  # Reference radius (arbitrary, affects normalization)
-        lambda_2d_theory = lambda_surface * np.log(r_ref / r_outside) / np.log(r_ref / mass_radius)
-        lambda_2d_theory = np.maximum(lambda_2d_theory, 0)  # Clip negative values
-        ax.plot(r_outside, lambda_2d_theory, 'b--', linewidth=2,
-                label='2D Newtonian: λ ∝ log(1/r)')
 
     # Exponential fit (screened)
     if fit_curve is not None:
