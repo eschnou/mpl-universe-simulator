@@ -6,7 +6,7 @@ Simple demonstration showing how a central mass creates a gravity well:
 1. Set up a central mass (uniform disk)
 2. Run the engine to steady state
 3. Plot radial profiles of f(r) and λ(r)
-4. Fit the effective β from the steady-state equation
+4. Fit the effective α from the steady-state equation
 
 This is the simplest test of emergent gravity from bandwidth limits.
 """
@@ -45,14 +45,14 @@ def compute_radial_profile(field: np.ndarray, center: tuple[int, int], max_r: in
     return r_vals, np.array(profile)
 
 
-def fit_effective_beta(lambda_field: np.ndarray, local_stall_field: np.ndarray) -> float:
+def fit_effective_alpha(lambda_field: np.ndarray, local_stall_field: np.ndarray) -> float:
     """
-    Fit the effective β from the steady-state equation:
-        λ(x) = local_stall(x) + β × ⟨λ⟩_neighbors(x)
+    Fit the effective α from the steady-state equation (Eq. A11):
+        λ(x) = γ·a(x) + α × ⟨λ⟩_neighbors(x)
 
-    Rearranged: β = (λ - local_stall) / ⟨λ⟩_neighbors
+    Rearranged: α = (λ - γ·a) / ⟨λ⟩_neighbors
 
-    We fit this over all nodes where local_stall ≈ 0 (outside mass).
+    We fit this over all nodes where local activity ≈ 0 (outside mass).
     """
     # Compute neighbor average of lambda
     neighbor_avg = (
@@ -66,12 +66,12 @@ def fit_effective_beta(lambda_field: np.ndarray, local_stall_field: np.ndarray) 
     if mask.sum() < 10:
         return np.nan
 
-    # β = (λ - local_stall) / ⟨λ⟩_neighbors
-    # Since local_stall ≈ 0 in masked region: β ≈ λ / ⟨λ⟩_neighbors
-    beta_estimates = lambda_field[mask] / neighbor_avg[mask]
+    # α = (λ - γ·a) / ⟨λ⟩_neighbors
+    # Since γ·a ≈ 0 in masked region: α ≈ λ / ⟨λ⟩_neighbors
+    alpha_estimates = lambda_field[mask] / neighbor_avg[mask]
 
     # Return median (robust to outliers)
-    return float(np.median(beta_estimates))
+    return float(np.median(alpha_estimates))
 
 
 def main():
@@ -110,14 +110,13 @@ def main():
 
     # Scheduler with damping for sync coupling
     # send_interval = max(local_time, avg_neighbor_gap × damping)
-    # base_interval=10 gives better temporal resolution for gap measurement
+    # base_interval=250 gives better temporal resolution for gap measurement
     damping = 1.0
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,        # Data units per base_interval
-        data_scale=10.0,      # Mass rate=1.0 → mean data=10 → local_time = base × 10/8 = 1.25×base
+        data_scale=10.0,      # Mass rate=1.0 → data=10 → local_time = base × 10/8 = 1.25×base
         damping=damping,
         base_interval=250,
-        stochastic=False,
         gap_ema_alpha=1.0
     )
     scheduler = BandwidthScheduler(
@@ -199,9 +198,9 @@ def main():
         lambda_surface_fit = None
         print(f"   Fit failed: {e}")
 
-    # Fit effective β from the paper's equation
-    print("\n5. Fitting effective β from steady-state equation...")
-    print("   λ(x) = local_stall(x) + β × ⟨λ⟩_neighbors(x)")
+    # Fit effective α from the paper's equation
+    print("\n5. Fitting effective α from steady-state equation...")
+    print("   λ(x) = γ·a(x) + α × ⟨λ⟩_neighbors(x)")
 
     # Create local stall field (where activity causes stalls)
     # local_stall > 0 inside mass, ≈ 0 outside
@@ -214,12 +213,12 @@ def main():
     local_stall_field[inside_mass] = 1.0 - poisson_dist.cdf(capacity, mass_rate * scale)
 
     lambda_field = 1.0 - lattice.f_smooth
-    effective_beta = fit_effective_beta(lambda_field, local_stall_field)
+    effective_alpha = fit_effective_alpha(lambda_field, local_stall_field)
 
-    print(f"   Input damping: {damping}")
-    print(f"   Fitted effective β:   {effective_beta:.3f}")
-    if not np.isnan(effective_beta):
-        print(f"   Ratio (fitted/input): {effective_beta / damping:.2f}")
+    print(f"   Input damping (α): {damping}")
+    print(f"   Fitted effective α: {effective_alpha:.3f}")
+    if not np.isnan(effective_alpha):
+        print(f"   Ratio (fitted/input): {effective_alpha / damping:.2f}")
 
     # Create visualization
     print("\n6. Creating visualization...")
@@ -289,13 +288,13 @@ def main():
     ax.axhline(y=0, color='gray', linestyle=':', alpha=0.5)
     ax.set_xlabel("Distance r from center")
     ax.set_ylabel("λ(r) = 1 - f(r)")
-    beta_str = f"β_eff={effective_beta:.2f}" if not np.isnan(effective_beta) else "β_eff=?"
-    ax.set_title(f"Radial Profile: λ(r) outside mass ({beta_str})")
+    alpha_str = f"α_eff={effective_alpha:.2f}" if not np.isnan(effective_alpha) else "α_eff=?"
+    ax.set_title(f"Radial Profile: λ(r) outside mass ({alpha_str})")
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
     ax.set_xlim(mass_radius, max(r_vals))
 
-    fig.suptitle(f"Emergent Gravity from Bandwidth Limits\ndamping={damping}, β_eff={effective_beta:.2f}, Mass rate={mass_rate}",
+    fig.suptitle(f"Emergent Gravity from Bandwidth Limits\nα={damping}, α_eff={effective_alpha:.2f}, Mass rate={mass_rate}",
                  fontsize=14, fontweight='bold')
     fig.tight_layout()
 
@@ -316,8 +315,8 @@ def main():
     print(f"  • Screened Poisson: λ(r) ∝ exp(-r/ξ) with ξ ≈ {xi_fit:.0f}" if xi_fit else "  • Fit failed")
     print(f"  • f recovers to ~1 at r ≈ {mass_radius + 5*xi_fit:.0f} (surface + 5ξ)" if xi_fit else "")
     print()
-    print(f"  • Input damping: {damping}")
-    print(f"  • Fitted effective β:   {effective_beta:.3f}" if not np.isnan(effective_beta) else "  • β fit failed")
+    print(f"  • Input α (damping): {damping}")
+    print(f"  • Fitted effective α: {effective_alpha:.3f}" if not np.isnan(effective_alpha) else "  • α fit failed")
     print("=" * 60)
 
 

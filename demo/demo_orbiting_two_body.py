@@ -35,7 +35,6 @@ def create_scheduler(lattice, source_map):
         data_scale=10.0,
         damping=1.0,
         base_interval=250,
-        stochastic=False,
         gap_ema_alpha=1.0,
     )
     return BandwidthScheduler(

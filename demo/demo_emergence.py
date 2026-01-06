@@ -57,7 +57,6 @@ def main():
         data_scale=10.0,
         damping=damping,
         base_interval=250,
-        stochastic=False,
         gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(
@@ -69,8 +68,8 @@ def main():
 
     print(f"   Grid size: {nx}x{ny}")
     print(f"   Source: Gaussian at center, peak_rate=1.0, sigma=8")
-    print(f"   BandwidthScheduler: damping={damping}, stochastic={scheduler_config.stochastic}")
-    print(f"   Message size: L ~ Poisson(activity * {scheduler_config.data_scale}), bandwidth={scheduler_config.bandwidth}")
+    print(f"   BandwidthScheduler: α={damping}")
+    print(f"   Data size: activity × {scheduler_config.data_scale}, bandwidth={scheduler_config.bandwidth}")
 
     # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
     print("\n2. Running engine to steady state...")
@@ -81,8 +80,8 @@ def main():
     print(f"   Mean f: {stats['mean_f']:.4f}")
     print(f"   Min f:  {stats['min_f']:.4f}")
 
-    # === VERIFY PAPER'S LINEAR EQUATION: λ = γa + β⟨λ⟩ ===
-    print("\n3. Testing paper's self-consistency equation: λ = γa + β⟨λ⟩...")
+    # === VERIFY PAPER'S LINEAR EQUATION (Eq. A11): λ = γa + α⟨λ⟩ ===
+    print("\n3. Testing paper's self-consistency equation: λ = γa + α⟨λ⟩...")
 
     # Get simulated λ field
     lambda_sim = 1.0 - lattice.f
@@ -98,8 +97,8 @@ def main():
     # Normalized activity
     a_norm = source_map.rates / scheduler_config.bandwidth
 
-    # Fit: λ_sim = γ * a_norm + β * ⟨λ⟩
-    # This is a 2-parameter linear regression: λ = γ*a + β*⟨λ⟩
+    # Fit: λ_sim = γ * a_norm + α * ⟨λ⟩
+    # This is a 2-parameter linear regression: λ = γ*a + α*⟨λ⟩
     # We can solve it with least squares
     margin = 5
     inner = (slice(margin, -margin), slice(margin, -margin))
@@ -108,24 +107,24 @@ def main():
     a_flat = a_norm[inner].flatten()
     neighbor_flat = lambda_neighbor_avg[inner].flatten()
 
-    # Build design matrix [a, ⟨λ⟩] and solve for [γ, β]
+    # Build design matrix [a, ⟨λ⟩] and solve for [γ, α]
     X = np.column_stack([a_flat, neighbor_flat])
     coeffs, residuals, rank, s = np.linalg.lstsq(X, lambda_flat, rcond=None)
-    gamma_fit, beta_fit = coeffs
+    gamma_fit, alpha_fit = coeffs
 
     # Compute predicted λ and correlation
-    lambda_predicted = gamma_fit * a_flat + beta_fit * neighbor_flat
+    lambda_predicted = gamma_fit * a_flat + alpha_fit * neighbor_flat
     corr_linear = np.corrcoef(lambda_flat, lambda_predicted)[0, 1]
 
-    print(f"   Fitted: λ = {gamma_fit:.4f}·a + {beta_fit:.4f}·⟨λ⟩")
+    print(f"   Fitted: λ = {gamma_fit:.4f}·a + {alpha_fit:.4f}·⟨λ⟩")
     print(f"   Correlation (simulated vs predicted): {corr_linear:.4f}")
-    print(f"   (Paper predicts γ>0 for bandwidth coupling, β∈[0,1] for sync coupling)")
+    print(f"   (Paper predicts γ>0 for local activity, α∈[0,1] for coupling)")
 
     # Verify Poisson emergence (both pure and screened)
     print("\n4. Verifying Poisson emergence...")
     result_pure = verify_poisson_emergence(lattice, source_map)
-    # Use fitted beta for screened Poisson comparison
-    result_screened = verify_screened_poisson_emergence(lattice, source_map, beta=beta_fit)
+    # Use fitted alpha for screened Poisson comparison
+    result_screened = verify_screened_poisson_emergence(lattice, source_map, alpha=alpha_fit)
 
     print(f"\n   RESULTS:")
     print(f"   ---------")

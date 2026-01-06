@@ -71,7 +71,6 @@ def main():
         data_scale=10.0,
         damping=damping,
         base_interval=250,
-        stochastic=False,
         gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(

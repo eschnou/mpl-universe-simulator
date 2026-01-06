@@ -39,25 +39,26 @@ No Poisson equations in the engine. Gravity emerges from queuing dynamics.
 
 ## The Update Rule
 
-The engine uses a simple local update rule (Jacobi relaxation):
+The steady-state self-consistency equation (from the paper's Appendix A):
 
 ```
-λ_new(x,y) = local_stall(x,y) + β × [λ(x,y-1) + λ(x,y+1) + λ(x-1,y) + λ(x+1,y)] / 4
+λ(x) ≈ γ·a(x) + α·⟨λ⟩_x
 ```
 
 Where:
-- **local_stall**: 1 if message_size > capacity, 0 otherwise (stochastic)
-- **β**: sync coupling strength (0.999 typical)
-- **λ**: slowness field (gravity potential analog)
-- **f = 1 - λ**: update fraction (what clocks measure)
+- **γ·a(x)**: local stall from bandwidth saturation (activity generates large messages)
+- **α**: coupling strength ∈ [0,1]
+- **⟨λ⟩_x**: average stall fraction among neighbors
+- **λ**: slowness field (stall fraction)
+- **f = 1 - λ**: completion rate (what clocks measure)
 
 **How the gradient emerges:**
-1. Only nodes at the mass generate stalls (high activity → messages exceed capacity)
-2. Information propagates at 1 cell/tick (finite "speed of light")
-3. With β < 1, there's screening: `λ(r) ~ exp(-r/ξ)` where `ξ ~ 1/√(1-β)`
-4. Steady state = balance between source pumping and screening decay
+1. High-activity nodes saturate links → local stalling (γ·a(x) term)
+2. Stalling propagates to neighbors via synchronization pressure (α·⟨λ⟩ term)
+3. With α < 1, there's screening: `λ(r) ~ exp(-r/ξ)` where `ξ ~ 1/√(1-α)`
+4. With α = 1, full coupling → Poisson equation → long-range 1/r (or log r in 2D)
 
-**No differential equations are solved** — just local message passing with finite bandwidth. The screened Poisson field emerges from the dynamics.
+**No differential equations are solved** — just local message passing with finite bandwidth. The Poisson field emerges from the dynamics.
 
 ---
 

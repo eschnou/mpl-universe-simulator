@@ -678,14 +678,14 @@ gradient_depth ≈ base_interval × (data_scale/bandwidth - 1)
 
 The averaging over neighbors determines the gradient shape. Moore neighborhood produces isotropic (circular) gradients around point sources.
 
-#### 5.4.5 Stochastic vs Deterministic Mode
+#### 5.4.5 Data Size Computation
 
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| Stochastic | `data_size ~ Poisson(activity × scale)` | Realistic fluctuations, but noise can ratchet up gaps via EMA |
-| Deterministic | `data_size = activity × scale` | Stable convergence, clean steady-state |
+Data size is computed deterministically from activity:
+```
+data_size = activity × data_scale
+```
 
-**Recommendation:** Use deterministic mode (`stochastic=False`) for physics experiments requiring stable steady states. Use stochastic mode for studying fluctuation effects.
+This provides stable convergence and clean steady-state behavior, which is essential for physics experiments.
 
 #### 5.4.6 Gap EMA Alpha
 

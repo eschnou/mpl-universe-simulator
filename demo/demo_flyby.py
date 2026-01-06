@@ -52,13 +52,12 @@ def main():
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
-    # BandwidthScheduler with local rule: send_interval = max(local_time, avg_gap × damping)
+    # BandwidthScheduler with local rule: send_interval = max(local_time, avg_gap × α)
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,
         data_scale=10.0,
         damping=damping,
         base_interval=250,
-        stochastic=False,
         gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(

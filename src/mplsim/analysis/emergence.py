@@ -173,45 +173,45 @@ def fit_kappa(
     return slope, r_value ** 2, rmse
 
 
-def compute_screening_length(beta: float, d: int = 4) -> float:
+def compute_screening_length(alpha: float, d: int = 4) -> float:
     """
-    Compute theoretical screening length from paper Eq. 14.
+    Compute theoretical screening length from paper Eq. A16.
 
-    ξ ~ sqrt(β / [d(1 - β)])
+    ξ ~ sqrt(α / [d(1 - α)])
 
     Args:
-        beta: Synchronization coupling strength
+        alpha: Coupling strength (paper's α)
         d: Lattice degree (4 for von Neumann, 8 for Moore)
 
     Returns:
         Screening length ξ
     """
-    if beta >= 1.0:
-        return float('inf')  # No screening in strong sync limit
-    return np.sqrt(beta / (d * (1 - beta)))
+    if alpha >= 1.0:
+        return float('inf')  # No screening at full coupling
+    return np.sqrt(alpha / (d * (1 - alpha)))
 
 
-def compute_screening_mass_squared(beta: float, d: int = 4) -> float:
+def compute_screening_mass_squared(alpha: float, d: int = 4) -> float:
     """
     Compute the screening mass squared m² for the screened Poisson equation.
 
     The full emergence relationship is:
         (Lλ) + m²λ = κρ
 
-    where m² = d(1-β)/β. When β→1, m²→0 and we get pure Poisson.
+    where m² = d(1-α)/α. When α→1, m²→0 and we get pure Poisson.
 
     Args:
-        beta: Synchronization coupling strength
+        alpha: Coupling strength (paper's α)
         d: Lattice degree (4 for von Neumann, 8 for Moore)
 
     Returns:
         Screening mass squared m²
     """
-    if beta >= 1.0:
+    if alpha >= 1.0:
         return 0.0
-    if beta <= 0.0:
+    if alpha <= 0.0:
         return float('inf')
-    return d * (1 - beta) / beta
+    return d * (1 - alpha) / alpha
 
 
 @dataclass
@@ -219,7 +219,7 @@ class ScreenedEmergenceResult:
     """Results of screened Poisson emergence verification."""
 
     # The screened Poisson relationship: (Lλ) + m²λ = κρ
-    m_squared_theoretical: float  # From beta: m² = d(1-β)/β
+    m_squared_theoretical: float  # From α: m² = d(1-α)/α
     m_squared_best_fit: float     # From optimization
 
     # Correlations
@@ -239,16 +239,16 @@ class ScreenedEmergenceResult:
 
 def solve_theoretical_lambda(
     source_map: "SourceMap",
-    beta: float = 0.9,
+    alpha: float = 0.9,
     gamma: float = 0.5,
     iterations: int = 500,
     capacity: float = 5.0,
 ) -> np.ndarray:
     """
-    Solve the theoretical λ field from the paper's equation.
+    Solve the theoretical λ field from the paper's equation (Eq. A11).
 
     The paper claims λ satisfies:
-        λ(x) = γ·a(x) + β·⟨λ⟩_x
+        λ(x) = γ·a(x) + α·⟨λ⟩_x
 
     where ⟨λ⟩_x is the average of λ over neighbors.
 
@@ -256,8 +256,8 @@ def solve_theoretical_lambda(
 
     Args:
         source_map: Source map with activity rates
-        beta: Synchronization coupling strength (0-1)
-        gamma: Bandwidth coupling strength
+        alpha: Coupling strength (paper's α, 0-1)
+        gamma: Local activity coupling (paper's γ)
         iterations: Number of iterations for convergence
         capacity: Link capacity for normalizing activity rates
 
@@ -271,7 +271,7 @@ def solve_theoretical_lambda(
     # Initialize λ = 0
     lambda_field = np.zeros_like(a)
 
-    # Iteratively solve λ = γa + β⟨λ⟩
+    # Iteratively solve λ = γa + α⟨λ⟩
     for _ in range(iterations):
         # Compute average of neighbors (periodic boundary)
         avg_lambda = (
@@ -281,8 +281,8 @@ def solve_theoretical_lambda(
             np.roll(lambda_field, -1, axis=1)    # W
         ) / 4.0
 
-        # Update: λ = γa + β⟨λ⟩
-        lambda_field = gamma * a + beta * avg_lambda
+        # Update: λ = γa + α⟨λ⟩
+        lambda_field = gamma * a + alpha * avg_lambda
 
     return lambda_field
 
@@ -290,24 +290,24 @@ def solve_theoretical_lambda(
 def verify_screened_poisson_emergence(
     lattice: "Lattice",
     source_map: "SourceMap",
-    beta: float = 0.9,
+    alpha: float = 0.9,
     d: int = 4,
 ) -> ScreenedEmergenceResult:
     """
     Verify the SCREENED Poisson equation emerges from engine dynamics.
 
-    The full relationship (for β < 1) is:
+    The full relationship (for α < 1) is:
         (Lλ)(x) + m²·λ(x) = κ·ρ(x)
 
-    where m² = d(1-β)/β is the screening mass.
+    where m² = d(1-α)/α is the screening mass.
 
-    When β → 1: m² → 0 and we get pure Poisson (Lλ) = κρ
-    When β < 1: Screening suppresses long-range propagation
+    When α → 1: m² → 0 and we get pure Poisson (Lλ) = κρ
+    When α < 1: Screening suppresses long-range propagation
 
     Args:
         lattice: Lattice with established f field
         source_map: Source map defining activity density
-        beta: Synchronization coupling strength used in simulation
+        alpha: Coupling strength (paper's α) used in simulation
         d: Lattice degree (4 for von Neumann)
 
     Returns:
@@ -326,8 +326,8 @@ def verify_screened_poisson_emergence(
     lambda_inner = lambda_field[inner_slice].flatten()
     rho_inner = rho_activity[inner_slice].flatten()
 
-    # Theoretical m² from beta
-    m_sq_theoretical = compute_screening_mass_squared(beta, d)
+    # Theoretical m² from alpha
+    m_sq_theoretical = compute_screening_mass_squared(alpha, d)
 
     # Pure Poisson correlation
     corr_pure = np.corrcoef(L_inner, rho_inner)[0, 1]

@@ -16,8 +16,9 @@ reading any neighbor state directly.
 
 DERIVED QUANTITIES (for analysis, not used in logic):
 - λ(x) = 1 - f(x) is the "slowness" field
-- The steady-state satisfies: λ ≈ γ·a + β·⟨λ⟩ (paper's equation)
-- This implies screened Poisson: (L + m²)λ ≈ κρ
+- The steady-state satisfies: λ ≈ γ·a + α·⟨λ⟩ (paper's Eq. A11)
+- With α < 1: screened Poisson (short-range Yukawa)
+- With α = 1: pure Poisson (long-range Newtonian)
 """
 
 from __future__ import annotations
@@ -38,10 +39,9 @@ from mplsim.core.messages import DIRECTION_DELTAS, OPPOSITE_DIRECTION
 class BandwidthSchedulerConfig:
     """Configuration for bandwidth scheduler."""
     bandwidth: float = 1.0           # Data units per base_interval
-    damping: float = 0.9             # Sync damping (< 1 to avoid runaway)
-    data_scale: float = 1.0          # data_size ~ Poisson(activity × scale)
+    damping: float = 0.9             # Coupling α: 1.0 = long-range, <1 = screened
+    data_scale: float = 1.0          # data_size = activity × scale
     base_interval: float = 1.0       # Baseline ticks per update (f=1 baseline)
-    stochastic: bool = True          # Poisson (True) or deterministic (False)
     gap_ema_alpha: float = 0.1       # EMA smoothing for gap observations
 
 
@@ -208,11 +208,8 @@ class BandwidthScheduler:
         cfg = self.config
         tick = self.current_tick
 
-        # Local time from data generation
-        if cfg.stochastic:
-            data_sizes = np.random.poisson(self.source_map.rates * cfg.data_scale)
-        else:
-            data_sizes = self.source_map.rates * cfg.data_scale
+        # Local time from data generation: data_size = activity × scale
+        data_sizes = self.source_map.rates * cfg.data_scale
         local_time = np.maximum(cfg.base_interval, cfg.base_interval * data_sizes / cfg.bandwidth)
 
         # Sync time from observed neighbor gaps

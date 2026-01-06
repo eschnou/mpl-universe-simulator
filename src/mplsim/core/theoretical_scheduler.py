@@ -1,11 +1,14 @@
 """
 Theoretical Scheduler: Implements the paper's linear λ dynamics directly.
 
-The paper's core equation is:
-    λ(x) = γ·a(x) + β·⟨λ⟩_x
+The paper's core equation (Eq. A11) is:
+    λ(x) = γ·a(x) + α·⟨λ⟩_x
 
-This is a LINEAR relationship where λ is unbounded. This scheduler directly
-computes the theoretical formula iteratively, which is useful for:
+Where α is the coupling strength:
+- α < 1: screened Poisson (short-range Yukawa)
+- α = 1: pure Poisson (long-range Newtonian)
+
+This scheduler directly computes the theoretical formula iteratively, useful for:
 - Fast simulation when you don't need to prove emergence
 - Comparing against BandwidthScheduler (which has true causal emergence)
 - Testing theoretical predictions
@@ -30,11 +33,11 @@ if TYPE_CHECKING:
 class TheoreticalSchedulerConfig:
     """Configuration for the theoretical scheduler."""
 
-    gamma: float = 0.5  # Bandwidth coupling: λ contribution from local activity
-    beta: float = 0.9   # Sync coupling: λ contribution from neighbor average
+    gamma: float = 0.5  # γ: local activity contribution to λ
+    alpha: float = 0.9  # α (coupling): 1.0 = long-range Poisson, <1 = screened Yukawa
     lambda_decay: float = 0.01  # Natural decay to prevent unbounded growth
-    lambda_smoothing: float = 0.1  # EMA smoothing for λ updates
-    link_capacity: float = 5.0  # Override for bandwidth calculation
+    ema_smoothing: float = 0.1  # EMA smoothing for λ updates
+    link_capacity: float = 5.0  # Normalization for activity → λ
 
 
 @dataclass
@@ -42,7 +45,7 @@ class TheoreticalScheduler:
     """
     Scheduler implementing the paper's linear λ dynamics directly.
 
-    Directly computes λ(x) = γ·a(x) + β·⟨λ⟩_x at each step,
+    Directly computes λ(x) = γ·a(x) + α·⟨λ⟩_x at each step,
     then derives f from λ.
 
     This is a "theoretical" scheduler that computes the expected answer
@@ -72,7 +75,7 @@ class TheoreticalScheduler:
         Run simulation for n ticks.
 
         Each tick applies the update:
-            λ_new(x) = (1-decay) * [γ·a_norm(x) + β·⟨λ_old⟩_x]
+            λ_new(x) = (1-decay) * [γ·a_norm(x) + α·⟨λ_old⟩_x]
 
         Args:
             n_ticks: Number of ticks to run
@@ -97,17 +100,16 @@ class TheoreticalScheduler:
 
     def _tick(self):
         """Execute one simulation tick."""
-        ny, nx = self.lattice.shape
         gamma = self.config.gamma
-        beta = self.config.beta
+        alpha = self.config.alpha
         decay = self.config.lambda_decay
-        alpha = self.config.lambda_smoothing
+        ema = self.config.ema_smoothing
 
         # Scale activity by link capacity (like bandwidth saturation)
         # Higher rates relative to capacity → more congestion → higher λ
         rates = self.source_map.rates
         capacity = self.config.link_capacity
-        a_norm = rates / capacity  # Unbounded: high rates give high λ
+        a_norm = rates / capacity
 
         # Compute neighbor average using boundary-aware shifting
         # For absorbing boundaries, missing neighbors contribute λ=0 (f=1 reference)
@@ -118,17 +120,17 @@ class TheoreticalScheduler:
             self.lattice.shift_field(self._lambda_field, -1, 0, fill_value=0.0)    # W
         ) / 4.0
 
-        # Apply the paper's linear equation:
-        # λ_new = γ·a + β·⟨λ⟩
+        # Apply the paper's linear equation (Eq. A11):
+        # λ = γ·a + α·⟨λ⟩
         # With decay to prevent unbounded growth:
-        # λ_new = (1 - decay) * (γ·a + β·⟨λ⟩)
-        lambda_target = (1.0 - decay) * (gamma * a_norm + beta * avg_neighbor_lambda)
+        # λ_target = (1 - decay) * (γ·a + α·⟨λ⟩)
+        lambda_target = (1.0 - decay) * (gamma * a_norm + alpha * avg_neighbor_lambda)
 
-        # Smooth update
-        self._lambda_field = (1 - alpha) * self._lambda_field + alpha * lambda_target
+        # EMA smooth update
+        self._lambda_field = (1 - ema) * self._lambda_field + ema * lambda_target
 
-        # Clamp λ ≥ 0 (λ = 1 - f, and f ≤ 1)
-        self._lambda_field = np.maximum(self._lambda_field, 0.0)
+        # Clamp λ to [0, 1] since f = 1 - λ must be in [0, 1]
+        self._lambda_field = np.clip(self._lambda_field, 0.0, 1.0)
 
         # Enforce Dirichlet BC: λ=0 at boundaries for absorbing BC
         if self.lattice.config.boundary == "absorbing":
@@ -137,10 +139,8 @@ class TheoreticalScheduler:
             self._lambda_field[:, 0] = 0.0   # Left edge
             self._lambda_field[:, -1] = 0.0  # Right edge
 
-        # Derive f from λ: f = 1/(1 + λ)
-        # This maps λ ∈ [0, ∞) to f ∈ (0, 1]
-        # Clamp to [0, 1] for consistency with BandwidthScheduler
-        self.lattice.f = np.clip(1.0 / (1.0 + self._lambda_field), 0.0, 1.0)
+        # Derive f from λ using paper's definition (Eq. 6): f = 1 - λ
+        self.lattice.f = 1.0 - self._lambda_field
 
     def get_lambda_field(self) -> np.ndarray:
         """Get current λ field."""
