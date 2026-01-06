@@ -12,12 +12,12 @@ This project explores a computational approach to physics foundations. We start 
 simple substrate—a lattice of nodes exchanging messages under finite bandwidth constraints—and 
 ask what phenomena emerge when we don't prevent them.
 
-A companion paper develop the idea:
+A companion paper develops the idea:
 
 **[Emergent Gravity from Finite Bandwidth in a Message-Passing Lattice](papers/emergent_gravity_from_finite_bandwidth.pdf)**
-> Add bandwidth limits to the lattice. Busy regions saturate their links, forcing nodes to wait. 
-> This creates a position-dependent slowdown—a "time-sag field"—from which gravitational phenomenology 
-> emerges: time dilation, free fall and horizons like behavior.
+> Add bandwidth limits to the lattice. Busy regions saturate their links, forcing nodes to wait.
+> This creates a position-dependent slowdown—a "time-sag field"—from which gravitational phenomenology
+> emerges: time dilation, free fall and horizon-like behavior.
 
 ---
 

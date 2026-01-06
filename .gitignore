@@ -4,3 +4,8 @@ output/
 *.lock
 .DS_Store
 .idea
+*.aux
+*.log
+*.out
+*Notes.bib
+*synctex.gz

@@ -15,7 +15,6 @@ class TestLatticeConfig:
         assert cfg.ny == 50
         assert cfg.neighborhood == "von_neumann"
         assert cfg.boundary == "periodic"
-        assert cfg.link_capacity == 10.0
         assert cfg.n_channels == 4
 
     def test_custom_config(self):
@@ -24,13 +23,12 @@ class TestLatticeConfig:
             ny=80,
             neighborhood="moore",
             boundary="absorbing",
-            link_capacity=20.0,
             n_channels=8,
         )
         assert cfg.nx == 100
         assert cfg.ny == 80
         assert cfg.neighborhood == "moore"
-        assert cfg.link_capacity == 20.0
+        assert cfg.n_channels == 8
 
 
 class TestLattice:

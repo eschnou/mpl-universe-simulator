@@ -485,7 +485,75 @@ Non-goals for v1:
 
 ---
 
-## 12. Validation and Sanity Checks
+## 12. Bandwidth Scheduler Implementation Notes
+
+This section documents critical implementation details discovered during development of the bandwidth-based sync scheduler.
+
+### 12.1 Core Mechanism
+
+The bandwidth scheduler implements emergent gravity via:
+
+```
+send_interval = max(local_time, avg_neighbor_gap × damping)
+f = base_interval / send_interval
+```
+
+Where:
+- `local_time = base_interval × data_size / bandwidth` (processing constraint)
+- `avg_neighbor_gap` = EMA of observed gaps between neighbor messages
+- `damping` controls sync pressure propagation (use 1.0 for Jacobi-like behavior)
+
+### 12.2 Boundary Condition Enforcement
+
+**Critical**: For absorbing boundaries, must enforce `_send_interval = base_interval` at boundary nodes **BEFORE** computing `_next_send_tick`, not just set `f = 1` afterward.
+
+Without this, boundary nodes "fake" f=1 but actually send with gaps > base_interval. Interior nodes observe these slow gaps and drift.
+
+### 12.3 Integer Tick Discretization and Gradient Depth
+
+The gradient depth (how many cells from boundary before field flattens) is limited by the number of **integer gap levels**:
+
+```
+gradient_depth = gap_range = base_interval × (data_scale/bandwidth - 1)
+```
+
+**Example**: With `base_interval=10`, `data_scale=10`, `bandwidth=8`:
+- `local_time` at mass = 10 × 10/8 = 12.5 → rounds to gap 13
+- Gap range = 13 - 10 = 3 integer levels
+- Gradient extends only ~3-4 cells from boundary!
+
+**Fix**: For gradient extending N cells, set:
+```
+base_interval ≈ N / (data_scale/bandwidth - 1)
+```
+
+For a 150×150 grid with mass at center (65 cells from edge), need `base_interval ≈ 260`.
+
+### 12.4 Neighborhood Geometry
+
+- **von Neumann (4-neighbor)**: Produces **square** gradient artifacts (Manhattan distance metric)
+- **Moore (8-neighbor)**: Produces **circular** gradients (closer to Euclidean)
+
+**Recommendation**: Use Moore neighborhood for gravity simulations.
+
+### 12.5 Stochastic vs Deterministic Mode
+
+- **Stochastic** (Poisson data sizes): Noise ratchets up gaps over time via EMA. Nice-looking transient gradients that drift.
+- **Deterministic** (fixed data sizes): Converges to true steady-state gradient. Use for physics validation.
+
+**Recommendation**: Use deterministic mode for steady-state analysis.
+
+### 12.6 Gap EMA Alpha
+
+The `gap_ema_alpha` parameter controls how fast gap estimates respond:
+- Low alpha (0.1): Slow response, more smoothing, slower convergence
+- High alpha (1.0): Instant response, no smoothing, fast convergence
+
+For large `base_interval`, use higher alpha to achieve steady state in reasonable time.
+
+---
+
+## 13. Validation and Sanity Checks
 
 The simulator must provide basic checks:
 

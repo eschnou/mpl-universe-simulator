@@ -73,6 +73,9 @@ class GeodesicParticle(Pattern):
         # Proper time accumulator for this particle
         self.proper_time: float = 0.0
 
+        # Active flag (for absorbing boundaries, particle becomes inactive when leaving grid)
+        self.active: bool = True
+
         # Record initial position
         self._record_state()
 
@@ -106,7 +109,13 @@ class GeodesicParticle(Pattern):
         3. Update velocity (with time dilation factor)
         4. Update position
         5. Record trajectory
+
+        For absorbing boundaries, particle becomes inactive when leaving the grid.
         """
+        # Skip if particle is no longer active
+        if not self.active:
+            return
+
         self._canonical_tick = canonical_tick
 
         # Get local f value (raw, not smoothed) for time dilation
@@ -127,10 +136,33 @@ class GeodesicParticle(Pattern):
         self.px += self.vx * dt
         self.py += self.vy * dt
 
-        # Keep particle in bounds (periodic wrapping)
+        # Handle boundary conditions
         ny, nx = self.lattice.shape
-        self.px = self.px % nx
-        self.py = self.py % ny
+        boundary = self.lattice.config.boundary
+
+        if boundary == "periodic":
+            # Wrap around
+            self.px = self.px % nx
+            self.py = self.py % ny
+        elif boundary == "absorbing":
+            # Check if particle left the grid
+            if self.px < 0 or self.px >= nx or self.py < 0 or self.py >= ny:
+                self.active = False
+                return
+        else:  # reflective
+            # Reflect at boundaries
+            if self.px < 0:
+                self.px = -self.px
+                self.vx = -self.vx
+            elif self.px >= nx:
+                self.px = 2 * nx - self.px - 1
+                self.vx = -self.vx
+            if self.py < 0:
+                self.py = -self.py
+                self.vy = -self.vy
+            elif self.py >= ny:
+                self.py = 2 * ny - self.py - 1
+                self.vy = -self.vy
 
         # Accumulate proper time
         self.proper_time += dt
@@ -143,20 +175,37 @@ class GeodesicParticle(Pattern):
         Get f value at position using bilinear interpolation.
 
         Args:
-            px, py: Position (will be wrapped to grid)
+            px, py: Position
             use_smoothed: If True, use f_smooth (for gradients); if False, use raw f (for time dilation)
+
+        Boundary handling:
+        - periodic: wraps coordinates
+        - absorbing/reflective: clamps to edge values
         """
         ny, nx = self.lattice.shape
+        boundary = self.lattice.config.boundary
 
-        # Wrap coordinates
-        px = px % nx
-        py = py % ny
+        # Handle coordinates based on boundary type
+        if boundary == "periodic":
+            px = px % nx
+            py = py % ny
+        else:
+            # Clamp to valid range for absorbing/reflective
+            px = max(0, min(nx - 1e-6, px))
+            py = max(0, min(ny - 1e-6, py))
 
         # Get integer coordinates
         x0 = int(px)
         y0 = int(py)
-        x1 = (x0 + 1) % nx
-        y1 = (y0 + 1) % ny
+
+        # Next cell coordinates
+        if boundary == "periodic":
+            x1 = (x0 + 1) % nx
+            y1 = (y0 + 1) % ny
+        else:
+            # Clamp to grid
+            x1 = min(x0 + 1, nx - 1)
+            y1 = min(y0 + 1, ny - 1)
 
         # Fractional parts
         fx = px - x0

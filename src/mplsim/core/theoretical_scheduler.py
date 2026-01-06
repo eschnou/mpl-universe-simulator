@@ -109,12 +109,13 @@ class TheoreticalScheduler:
         capacity = self.config.link_capacity
         a_norm = rates / capacity  # Unbounded: high rates give high λ
 
-        # Compute neighbor average (periodic boundary)
+        # Compute neighbor average using boundary-aware shifting
+        # For absorbing boundaries, missing neighbors contribute λ=0 (f=1 reference)
         avg_neighbor_lambda = (
-            np.roll(self._lambda_field, 1, axis=0) +   # N
-            np.roll(self._lambda_field, -1, axis=0) +  # S
-            np.roll(self._lambda_field, 1, axis=1) +   # E
-            np.roll(self._lambda_field, -1, axis=1)    # W
+            self.lattice.shift_field(self._lambda_field, 0, -1, fill_value=0.0) +  # N
+            self.lattice.shift_field(self._lambda_field, 0, 1, fill_value=0.0) +   # S
+            self.lattice.shift_field(self._lambda_field, 1, 0, fill_value=0.0) +   # E
+            self.lattice.shift_field(self._lambda_field, -1, 0, fill_value=0.0)    # W
         ) / 4.0
 
         # Apply the paper's linear equation:
@@ -126,9 +127,20 @@ class TheoreticalScheduler:
         # Smooth update
         self._lambda_field = (1 - alpha) * self._lambda_field + alpha * lambda_target
 
+        # Clamp λ ≥ 0 (λ = 1 - f, and f ≤ 1)
+        self._lambda_field = np.maximum(self._lambda_field, 0.0)
+
+        # Enforce Dirichlet BC: λ=0 at boundaries for absorbing BC
+        if self.lattice.config.boundary == "absorbing":
+            self._lambda_field[0, :] = 0.0   # Top edge
+            self._lambda_field[-1, :] = 0.0  # Bottom edge
+            self._lambda_field[:, 0] = 0.0   # Left edge
+            self._lambda_field[:, -1] = 0.0  # Right edge
+
         # Derive f from λ: f = 1/(1 + λ)
         # This maps λ ∈ [0, ∞) to f ∈ (0, 1]
-        self.lattice.f = 1.0 / (1.0 + self._lambda_field)
+        # Clamp to [0, 1] for consistency with BandwidthScheduler
+        self.lattice.f = np.clip(1.0 / (1.0 + self._lambda_field), 0.0, 1.0)
 
     def get_lambda_field(self) -> np.ndarray:
         """Get current λ field."""
@@ -145,7 +157,7 @@ class TheoreticalScheduler:
         sigma = self.lattice.config.spatial_sigma
         if sigma > 0:
             self.lattice.f_smooth = gaussian_filter(
-                self.lattice.f, sigma=sigma, mode='wrap'
+                self.lattice.f, sigma=sigma, mode=self.lattice.get_scipy_mode()
             )
         else:
             self.lattice.f_smooth = self.lattice.f.copy()

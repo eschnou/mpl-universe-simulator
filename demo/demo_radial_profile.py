@@ -82,12 +82,12 @@ def main():
     print("=" * 60)
 
     # Grid setup
-    grid_size = 150
+    grid_size = 100
     cx, cy = grid_size // 2, grid_size // 2
 
     # Mass parameters
-    mass_radius = 10
-    mass_rate = 1.0
+    mass_radius = 5
+    mass_rate = 1
 
     print(f"\n1. Setup:")
     print(f"   Grid: {grid_size}x{grid_size}")
@@ -101,9 +101,8 @@ def main():
     config = LatticeConfig(
         nx=grid_size,
         ny=grid_size,
-        neighborhood="von_neumann",
+        neighborhood="moore",
         boundary="absorbing",
-        link_capacity=10.0,
         spatial_sigma=2.0,
     )
     lattice = Lattice(config)
@@ -112,13 +111,14 @@ def main():
     # Scheduler with damping for sync coupling
     # send_interval = max(local_time, avg_neighbor_gap × damping)
     # base_interval=10 gives better temporal resolution for gap measurement
-    damping = 0.999
+    damping = 1.0
     scheduler_config = BandwidthSchedulerConfig(
-        bandwidth=8.0,       # Data units per base_interval
-        data_scale=50.0,      # Mass rate=1.0 → mean data=8 → local_time=10×8/8=10
+        bandwidth=8.0,        # Data units per base_interval
+        data_scale=10.0,      # Mass rate=1.0 → mean data=10 → local_time = base × 10/8 = 1.25×base
         damping=damping,
-        base_interval=50.0,  # f=1 means 1 update per 10 ticks
-        stochastic=True,
+        base_interval=250,
+        stochastic=False,
+        gap_ema_alpha=1.0
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -157,7 +157,7 @@ def main():
 
     # Run to steady state
     print("\n3. Running to steady state...")
-    n_ticks = 10000
+    n_ticks = 30000
     stats = scheduler.run(n_ticks)
     print(f"   {n_ticks} ticks completed")
     print(f"   Mean f: {stats['mean_f']:.4f}")

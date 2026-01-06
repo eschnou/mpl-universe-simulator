@@ -30,13 +30,13 @@ def main():
     print("=" * 60)
 
     # Grid setup
-    grid_size = 200
+    grid_size = 100
     cx, cy = grid_size // 2, grid_size // 2
 
     # Mass parameters - two masses separated horizontally
-    mass_radius = 10
+    mass_radius = 5
     mass_rate = 1.0
-    separation = 50  # Distance between mass centers
+    separation = 25  # Distance between mass centers
 
     # Mass positions
     mass1_x, mass1_y = cx - separation // 2, cy
@@ -57,22 +57,22 @@ def main():
     config = LatticeConfig(
         nx=grid_size,
         ny=grid_size,
-        neighborhood="von_neumann",
-        boundary="periodic",
-        link_capacity=10.0,
+        neighborhood="moore",
+        boundary="absorbing",
         spatial_sigma=2.0,
     )
     lattice = Lattice(config)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
 
     # Scheduler with same settings as radial profile demo
-    damping = 0.9
+    damping = 1.0
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,
-        data_scale=8.0,
+        data_scale=10.0,
         damping=damping,
-        base_interval=50.0,
-        stochastic=True,
+        base_interval=250,
+        stochastic=False,
+        gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -86,18 +86,19 @@ def main():
 
     # Run to steady state
     print("\n2. Running to steady state...")
-    n_ticks = 10000
+    n_ticks = 50000
     stats = scheduler.run(n_ticks)
     print(f"   {n_ticks} ticks completed")
     print(f"   Mean f: {stats['mean_f']:.4f}")
     print(f"   Min f:  {stats['min_f']:.4f}")
 
     # Compute f values at key locations
+    edge_x = grid_size - 2  # Near boundary
     print("\n3. Field values at key locations:")
     print(f"   f at mass 1 center: {lattice.f_smooth[mass1_y, mass1_x]:.3f}")
     print(f"   f at mass 2 center: {lattice.f_smooth[mass2_y, mass2_x]:.3f}")
     print(f"   f at midpoint:      {lattice.f_smooth[cy, cx]:.3f}")
-    print(f"   f at edge (r=80):   {lattice.f_smooth[cy, cx + 80]:.3f}")
+    print(f"   f at edge (x={edge_x}): {lattice.f_smooth[cy, edge_x]:.3f}")
 
     # Create visualization
     print("\n4. Creating visualization...")

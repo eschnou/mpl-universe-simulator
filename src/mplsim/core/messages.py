@@ -74,11 +74,13 @@ class LinkQueues:
         nx: int,
         directions: list[str],
         capacity: float,
+        boundary: Literal["periodic", "absorbing", "reflective"] = "periodic",
     ):
         self.ny = ny
         self.nx = nx
         self.directions = directions
         self.capacity = capacity
+        self.boundary = boundary
 
         # Pending bits to send per node per direction
         # Shape: {direction: [ny, nx]}
@@ -170,20 +172,47 @@ class LinkQueues:
 
         return cleared
 
+    def _shift_field(self, field: np.ndarray, dx: int, dy: int) -> np.ndarray:
+        """Shift a field respecting boundary conditions."""
+        if self.boundary == "periodic":
+            return np.roll(np.roll(field, dy, axis=0), dx, axis=1)
+
+        elif self.boundary == "absorbing":
+            # Shift with False for out-of-bounds
+            result = np.zeros_like(field)
+            ny, nx = self.ny, self.nx
+
+            src_y_start = max(0, -dy)
+            src_y_end = min(ny, ny - dy)
+            src_x_start = max(0, -dx)
+            src_x_end = min(nx, nx - dx)
+
+            dst_y_start = max(0, dy)
+            dst_y_end = min(ny, ny + dy)
+            dst_x_start = max(0, dx)
+            dst_x_end = min(nx, nx + dx)
+
+            result[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = \
+                field[src_y_start:src_y_end, src_x_start:src_x_end]
+            return result
+
+        else:  # reflective
+            from scipy.ndimage import shift as scipy_shift
+            return scipy_shift(field.astype(float), (dy, dx), mode='reflect', order=0).astype(field.dtype)
+
     def _mark_receivers(self, send_direction: str, sent_mask: np.ndarray):
         """
         Mark receiving nodes as having received input.
 
         When a node sends in direction D, the receiving node gets input from opposite(D).
-        Uses periodic boundary conditions.
+        Respects boundary conditions.
         """
-        ny, nx = self.ny, self.nx
         dx, dy = DIRECTION_DELTAS[send_direction]
         receive_direction = OPPOSITE_DIRECTION[send_direction]
 
-        # Shift the sent_mask to receiver positions (periodic wrapping)
+        # Shift the sent_mask to receiver positions
         # If sender sends North (dy=-1), receiver is at y-1, receiving from South
-        receiver_mask = np.roll(np.roll(sent_mask, dy, axis=0), dx, axis=1)
+        receiver_mask = self._shift_field(sent_mask, dx, dy)
 
         # Mark receivers
         self.received_this_tick[receive_direction] |= receiver_mask

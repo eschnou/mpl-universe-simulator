@@ -23,7 +23,6 @@ class LatticeConfig:
     ny: int  # Grid height
     neighborhood: Literal["von_neumann", "moore"] = "von_neumann"  # 4 or 8 neighbors
     boundary: Literal["periodic", "reflective", "absorbing"] = "periodic"
-    link_capacity: float = 10.0  # Default bits per link per tick
     n_channels: int = 4  # State channels per node
 
     # Spatial smoothing for f_smooth (coarse-graining scale)
@@ -63,6 +62,60 @@ class Lattice:
     IMPORTANT: This class contains ONLY engine primitives.
     ϕ(x), ρ_act(x), and other derived quantities live in the analysis layer.
     """
+
+    def get_scipy_mode(self) -> str:
+        """Map boundary type to scipy.ndimage mode for spatial filtering."""
+        return {
+            "periodic": "wrap",
+            "absorbing": "nearest",
+            "reflective": "reflect",
+        }[self.config.boundary]
+
+    def shift_field(
+        self, field: np.ndarray, dx: int, dy: int, fill_value: float = 0.0
+    ) -> np.ndarray:
+        """
+        Shift a 2D field by (dx, dy) respecting boundary conditions.
+
+        Args:
+            field: 2D array to shift
+            dx: shift in x direction (positive = shift right, values come from left)
+            dy: shift in y direction (positive = shift down, values come from top)
+            fill_value: value for out-of-bounds cells (absorbing only)
+
+        Returns:
+            Shifted field with same shape
+        """
+        boundary = self.config.boundary
+
+        if boundary == "periodic":
+            # np.roll wraps around - standard periodic BC
+            return np.roll(np.roll(field, dy, axis=0), dx, axis=1)
+
+        elif boundary == "absorbing":
+            # Shift with fill_value for out-of-bounds
+            result = np.full_like(field, fill_value)
+            ny, nx = field.shape
+
+            # Compute source and destination slices
+            src_y_start = max(0, -dy)
+            src_y_end = min(ny, ny - dy)
+            src_x_start = max(0, -dx)
+            src_x_end = min(nx, nx - dx)
+
+            dst_y_start = max(0, dy)
+            dst_y_end = min(ny, ny + dy)
+            dst_x_start = max(0, dx)
+            dst_x_end = min(nx, nx + dx)
+
+            result[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = \
+                field[src_y_start:src_y_end, src_x_start:src_x_end]
+            return result
+
+        else:  # reflective
+            # Use scipy's shift with reflect mode
+            from scipy.ndimage import shift as scipy_shift
+            return scipy_shift(field, (dy, dx), mode='reflect', order=0)
 
     def __init__(self, config: LatticeConfig):
         self.config = config
@@ -182,7 +235,7 @@ class Lattice:
             self.f_smooth = gaussian_filter(
                 self.f,
                 sigma=spatial_sigma,
-                mode='wrap'  # Periodic boundary
+                mode=self.get_scipy_mode()
             )
         else:
             np.copyto(self.f_smooth, self.f)

@@ -37,28 +37,28 @@ def main():
 
     config = LatticeConfig(
         nx=nx, ny=ny,
-        neighborhood="von_neumann",
+        neighborhood="moore",
         boundary="periodic",
-        link_capacity=10.0,
-        spatial_sigma=1.0,
+        spatial_sigma=2.0,
     )
     lattice = Lattice(config)
 
     # Create source map with Gaussian mass
     # Higher activity at source -> more data to push -> longer waits -> lower f
-    source_map = SourceMap(ny, nx, background_rate=0.1)
-    source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=2.0, sigma=8.0)
+    source_map = SourceMap(ny, nx, background_rate=0.01)
+    source_map.add_gaussian_source(cx=nx//2, cy=ny//2, peak_rate=1.0, sigma=8.0)
 
     # Use BandwidthScheduler for TRUE causal emergence
     # Local rule: send_interval = max(local_time, avg_neighbor_gap × damping)
     kernel = LoadGeneratorKernel(message_size=1.0, sync_required=True)
-    damping = 0.9  # Sync coupling <1 for screened Poisson
+    damping = 1.0
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,
-        data_scale=8.0,
+        data_scale=10.0,
         damping=damping,
-        base_interval=10.0,
-        stochastic=True,
+        base_interval=250,
+        stochastic=False,
+        gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -68,13 +68,13 @@ def main():
     )
 
     print(f"   Grid size: {nx}x{ny}")
-    print(f"   Source: Gaussian at center, peak_rate=2.0, sigma=8")
+    print(f"   Source: Gaussian at center, peak_rate=1.0, sigma=8")
     print(f"   BandwidthScheduler: damping={damping}, stochastic={scheduler_config.stochastic}")
     print(f"   Message size: L ~ Poisson(activity * {scheduler_config.data_scale}), bandwidth={scheduler_config.bandwidth}")
 
     # Run to steady state (BandwidthScheduler needs more ticks for true convergence)
     print("\n2. Running engine to steady state...")
-    n_warmup = 5000  # More ticks needed for causal dynamics to propagate
+    n_warmup = 30000  # More ticks needed for causal dynamics to propagate
     print(f"   Running {n_warmup} ticks (this simulates real bandwidth dynamics)...")
     stats = scheduler.run(n_warmup)
     print(f"   Completed {n_warmup} ticks, {stats['total_updates']} node updates")

@@ -209,8 +209,8 @@ class LatticeConfig:
     ny: int                          # Grid height
     neighborhood: Literal["von_neumann", "moore"]  # 4 or 8 neighbors
     boundary: Literal["periodic", "reflective", "absorbing"]
-    link_capacity: float             # Default capacity C per link per tick
-    capacity_map: np.ndarray | None  # Optional per-link capacity overrides
+    n_channels: int = 4              # State channels per node
+    spatial_sigma: float = 1.0       # Gaussian smoothing for f_smooth
 
 @dataclass
 class Lattice:
@@ -610,6 +610,94 @@ def _update_statistics(self, updated_mask: np.ndarray):
     # Slowness
     self.lattice.slowness = 1.0 - self.lattice.f
 ```
+
+### 5.4 Bandwidth Scheduler Implementation Notes
+
+The `BandwidthScheduler` implements emergent gravity via purely local sync rules.
+
+#### 5.4.1 Core Mechanism
+
+```
+send_interval = max(local_time, avg_neighbor_gap × damping)
+f = base_interval / send_interval
+```
+
+Where:
+- `local_time = base_interval × data_size / bandwidth` (congestion from local activity)
+- `avg_neighbor_gap` = EMA of observed gaps between messages from neighbors
+- `damping` controls sync strength (1.0 = full sync, <1.0 = damped)
+
+This creates a Jacobi-like iteration: each node's send interval converges to the average of its neighbors (plus local contribution), producing smooth spatial gradients of f(x).
+
+#### 5.4.2 Boundary Condition Enforcement
+
+**Critical Implementation Order:** For absorbing boundaries with Dirichlet BC (f=1 at edges), the boundary enforcement MUST happen BEFORE using `send_interval` to compute `next_send_tick`:
+
+```python
+# CORRECT ORDER:
+# 1. Compute send_interval from local_time and sync_time
+send_interval = np.maximum(local_time, sync_time)
+
+# 2. Enforce Dirichlet BC on send_interval BEFORE using it
+if boundary == "absorbing":
+    send_interval[0, :] = base_interval   # Top edge
+    send_interval[-1, :] = base_interval  # Bottom edge
+    send_interval[:, 0] = base_interval   # Left edge
+    send_interval[:, -1] = base_interval  # Right edge
+
+# 3. Now compute next_send_tick from the corrected send_interval
+next_send_tick = np.where(sends, tick + send_interval, next_send_tick)
+
+# 4. Finally compute f from send_interval (also already correct)
+f = base_interval / send_interval
+```
+
+If boundary enforcement happens AFTER step 3, boundary nodes will schedule sends with incorrect gaps, causing gradients to degrade over time.
+
+#### 5.4.3 Integer Tick Discretization and Gradient Depth
+
+The system operates on integer ticks, which limits the achievable gradient depth:
+
+```
+gradient_depth ≈ base_interval × (data_scale/bandwidth - 1)
+```
+
+**Example:** With `bandwidth=8`, `data_scale=10`, `mass_rate=1`:
+- `local_time = base_interval × 10/8 = 1.25 × base_interval`
+- With `base_interval=10`: gap range = 10→13 (only 3 levels), gradient spans ~4 cells
+- With `base_interval=250`: gap range = 250→313 (63 levels), gradient spans ~65 cells
+
+**Rule of thumb:** For a gradient spanning N cells, use `base_interval ≈ N × 4`.
+
+#### 5.4.4 Neighborhood Geometry
+
+| Neighborhood | Neighbors | Gradient Shape | Use Case |
+|--------------|-----------|----------------|----------|
+| von Neumann | 4 | Square artifacts | Fast, but visible anisotropy |
+| Moore | 8 | Circular gradients | Recommended for physics demos |
+
+The averaging over neighbors determines the gradient shape. Moore neighborhood produces isotropic (circular) gradients around point sources.
+
+#### 5.4.5 Stochastic vs Deterministic Mode
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| Stochastic | `data_size ~ Poisson(activity × scale)` | Realistic fluctuations, but noise can ratchet up gaps via EMA |
+| Deterministic | `data_size = activity × scale` | Stable convergence, clean steady-state |
+
+**Recommendation:** Use deterministic mode (`stochastic=False`) for physics experiments requiring stable steady states. Use stochastic mode for studying fluctuation effects.
+
+#### 5.4.6 Gap EMA Alpha
+
+The `gap_ema_alpha` parameter controls how quickly nodes respond to observed neighbor gaps:
+
+| Alpha | Behavior |
+|-------|----------|
+| 0.1 | Slow response, heavily smoothed observations |
+| 0.5 | Moderate response |
+| 1.0 | Immediate response (no smoothing), fastest convergence |
+
+For reaching steady state quickly, use `gap_ema_alpha=1.0`.
 
 ---
 

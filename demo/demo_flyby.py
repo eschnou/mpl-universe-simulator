@@ -35,7 +35,7 @@ def main():
     # Mass parameters - higher rate for longer-range gravity
     mass_radius = 10
     mass_rate = 3.0  # Higher rate → more congestion → longer-range gravity
-    damping = 0.95
+    damping = 1.0
 
     print("\n1. Setting up mass (uniform disk)...")
     source_map = SourceMap(ny=grid_size, nx=grid_size, background_rate=0.01)
@@ -45,9 +45,8 @@ def main():
     config = LatticeConfig(
         nx=grid_size,
         ny=grid_size,
-        neighborhood="von_neumann",
+        neighborhood="moore",
         boundary="absorbing",
-        link_capacity=10.0,
         spatial_sigma=2.0,
     )
     lattice = Lattice(config)
@@ -56,10 +55,11 @@ def main():
     # BandwidthScheduler with local rule: send_interval = max(local_time, avg_gap × damping)
     scheduler_config = BandwidthSchedulerConfig(
         bandwidth=8.0,
-        data_scale=8.0,
+        data_scale=10.0,
         damping=damping,
-        base_interval=10.0,
-        stochastic=True,
+        base_interval=250,
+        stochastic=False,
+        gap_ema_alpha=1.0,
     )
     scheduler = BandwidthScheduler(
         lattice=lattice,
@@ -69,8 +69,8 @@ def main():
     )
 
     # Establish f field
-    print("\n2. Establishing f field (10000 ticks)...")
-    scheduler.run(10000)
+    print("\n2. Establishing f field (30000 ticks)...")
+    scheduler.run(30000)
     print(f"   f at center: {lattice.f[cy, cx]:.3f}")
     print(f"   f at r=20: {lattice.f[cy, cx+20]:.3f}")
     print(f"   f at r=50: {lattice.f[cy, cx+50]:.3f}")

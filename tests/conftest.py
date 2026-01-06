@@ -15,7 +15,6 @@ def small_grid_config():
         ny=50,
         neighborhood="von_neumann",
         boundary="periodic",
-        link_capacity=10.0,
     )
 
 
@@ -28,7 +27,6 @@ def medium_grid_config():
         ny=100,
         neighborhood="von_neumann",
         boundary="periodic",
-        link_capacity=10.0,
     )
 
 
