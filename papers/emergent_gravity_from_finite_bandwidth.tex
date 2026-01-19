@@ -18,7 +18,7 @@
 \begin{abstract}
 We introduce message-passing lattices (MPLs) as a minimal computational substrate: nodes with bounded local state, connected by links of finite bandwidth, updated by a uniform local rule. Neighbor states are not instantly visible but must be transmitted via messages, and transmission time grows with message size.
 
-This architecture poses a synchronization problem. Fully synchronous updates—where each node waits for all neighbors—allow a single slow region to freeze the entire network. Fully asynchronous updates—where nodes proceed independently—permit unbounded drift between regions. We propose bounded staleness as a middle path: each node adjusts its pace based on its own transmission delay and the average delay of its neighbors, controlled by a coupling parameter $\alpha \in [0,1]$.
+This architecture poses a synchronization problem. Fully synchronous updates—where each node waits for all neighbors—allow a single slow region to freeze the entire network. Fully asynchronous updates—where nodes proceed independently—permit unbounded drift between regions. We propose bounded staleness as a middle path: each node adjusts its pace based on its own transmission delay and the average delay of its neighbors.
 
 When local activity is high, state changes are large, messages are large, and links saturate. Saturated links cause delays. Delays spread through synchronization pressure. The result is a position-dependent reduction in update rate, which we describe by a scalar time-sag field $\phi(x) \leq 0$.
 
@@ -35,15 +35,17 @@ The usual intuition treats gravity as a fundamental force that causes time dilat
 \label{sec:intro}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-Consider a network of nodes that communicate by passing messages. If neighbor states are not instantly visible but must be transmitted, and if links have finite capacity, a fundamental tension arises: how should nodes synchronize their updates?
+Cellular automata (CA) are among the simplest models of distributed computation: a lattice of nodes, each updating its state based on the states of its neighbors, according to a uniform local rule. Despite this simplicity, CA exhibit remarkably rich behavior, from universal computation to self-organizing structures.
 
-A fully synchronous policy—where each node waits for all neighbors before proceeding—causes any local slowdown to propagate globally. A fully asynchronous policy—where nodes update independently—allows unbounded drift between regions. The middle ground is \emph{bounded staleness}: nodes adjust their pace to limit drift from neighbors, without requiring lockstep synchronization.
+Standard CA rest on an implicit assumption: neighbor states are freely and instantly accessible. Each node reads its neighbors' current states, computes, and writes its new state, all in one atomic step. This idealization is convenient but unrealistic. In any physical or computational substrate, learning a neighbor's state requires communication, and communication has costs—in time, in energy, in bandwidth.
 
-In this paper we show that bounded staleness, combined with finite bandwidth, produces gravitational phenomenology. High-activity regions saturate their links, causing delays that spread through synchronization pressure. The result is a smooth, position-dependent reduction in local update rate—a scalar field we call the \emph{time-sag}. In the weak-congestion regime, this field satisfies a Poisson equation sourced by activity density, with solutions matching the Newtonian gravitational potential.
+Message-passing lattices (MPLs) generalize CA by making these costs explicit. Nodes do not see neighbor states directly; they receive messages. Links have finite capacity, and transmission time grows with message size. This raises a question that standard CA never face: how should nodes synchronize their updates when communication is neither free nor instantaneous?
 
-The usual intuition treats gravity as a fundamental force that causes time dilation; here the order is reversed. Differential clock rates arise from bandwidth saturation, and gravitational attraction follows as a consequence.
+This paper explores the consequences of that question. We show that a natural synchronization policy—bounded staleness, where nodes adjust their pace to limit drift from neighbors—combined with finite bandwidth has consequences that extend well beyond the local neighborhood. High-activity regions saturate their links, causing delays that spread through synchronization pressure. The result is a smooth, position-dependent reduction in update rate across the lattice.
 
-The paper proceeds as follows. Section~\ref{sec:mpl} defines the message-passing lattice substrate. Section~\ref{sec:geometry} shows how space and time emerge from connectivity and update dynamics. Section~\ref{sec:sync} introduces the synchronization problem and bounded staleness. Section~\ref{sec:timesag} derives the time-sag field. Section~\ref{sec:phenomenology} develops gravitational phenomenology. Section~\ref{sec:simulator} presents numerical validation. Section~\ref{sec:extensions} discusses extensions toward general relativity, and Section~\ref{sec:conclusion} concludes.
+With full coupling—where nodes match the average pace of their neighbors—the emergent field satisfies a Poisson equation sourced by activity density, with solutions matching the Newtonian gravitational potential. Clocks in congested regions run slow, and propagating patterns deflect toward high-activity regions. We do not claim this is gravity—only that bandwidth constraints on a discrete substrate produce dynamics with the same mathematical form.
+
+The paper proceeds as follows. Section~\ref{sec:mpl} defines the message-passing lattice substrate. Section~\ref{sec:sync} introduces the synchronization problem and bounded staleness. Section~\ref{sec:timesag} defines the time-sag field and sketches its derivation. Section~\ref{sec:phenomenology} develops the gravitational analogy. Section~\ref{sec:simulator} presents numerical validation. Section~\ref{sec:extensions} discusses extensions, and Section~\ref{sec:conclusion} concludes.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -66,7 +68,7 @@ Formally, an MPL consists of:
     \item A uniform local update rule applied at every node.
 \end{itemize}
 
-Each node has bounded degree: $\deg(x) \leq d_{\max}$ for some fixed constant. This enforces locality. The graph need not be regular; irregularities can encode structure.
+Each node has bounded degree: $\deg(x) \leq d_{\max}$ for some fixed constant. This enforces locality. The graph need not be regular; irregularities can encode structure. The graph topology defines the effective spatial structure; we do not assume any background space.
 
 A cellular automaton is a special case of an MPL where nodes transmit their full state to all neighbors on every cycle. The MPL framework is more general: nodes may transmit partial information, compressed representations, or state deltas, and the cost of transmission becomes an explicit part of the dynamics.
 
@@ -89,20 +91,6 @@ The engine evolves through local update cycles. Each cycle at node $x$ consists 
 \end{enumerate}
 
 The compute stage has fixed cost. The propagate stage does not: when the state change $\Delta s_x$ is large, the message $m_x$ is large, and transmission takes longer. This asymmetry between computation and communication is the source of all that follows.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Emergent Geometry}
-\label{sec:geometry}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%------------------------------------------------------------------------------
-\subsection{Space from Connectivity}
-\label{subsec:space}
-%------------------------------------------------------------------------------
-
-There is no background space. Spatial structure emerges from the connectivity of the graph.
-
-We assume statistical regularity: the count of reachable nodes grows as $h^D$ with hop count $h$, defining an effective dimension $D$. Effective distance between nodes is operational: the round-trip signaling time in completed cycles defines $d_{\text{eff}}(x, y)$. At coarse scales, this behaves like an ordinary spatial metric. We do not assume any geometric embedding; the lattice \emph{is} the space.
 
 %------------------------------------------------------------------------------
 \subsection{Time from Updates}
@@ -182,14 +170,15 @@ Many rules could implement bounded staleness. We adopt a simple one. Let $\langl
 \end{equation}
 where $\alpha \in [0,1]$ controls coupling strength.
 
-The limiting cases recover our extremes:
+This rule interpolates between extremes of coupling strength:
 \begin{itemize}
-    \item $\alpha = 0$: No coupling. Nodes proceed based on local delay alone. Fully asynchronous.
-    \item $\alpha = 1$: Full coupling to neighbor average. A node slows to match the mean pace of its neighborhood.
+    \item $\alpha = 0$: No coupling. Nodes proceed based on local delay alone—effectively asynchronous.
+    \item $\alpha = 1$: Full coupling. A node slows to match the mean pace of its neighborhood.
 \end{itemize}
 
-Intermediate values $0 < \alpha < 1$ damp the coupling: nodes feel their neighbors but the influence is attenuated. As we show in the next section, the choice of $\alpha$ has profound consequences for the range of the emergent interaction.
+Note that even $\alpha = 1$ does not recover the strict synchronous policy of Section~\ref{subsec:sync_async}, which would require waiting for the slowest neighbor rather than matching the average. Full coupling to the average is a softer constraint that still permits some drift while ensuring that congestion propagates through the lattice.
 
+Intermediate values $0 < \alpha < 1$ damp the coupling: nodes feel their neighbors but the influence is attenuated. As we discuss in the next section, the choice of $\alpha$ has consequences for the range of the emergent interaction.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{The Time-Sag Field}
@@ -197,66 +186,41 @@ Intermediate values $0 < \alpha < 1$ damp the coupling: nodes feel their neighbo
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %------------------------------------------------------------------------------
-\subsection{Steady-State Completion Rate}
-\label{subsec:steady_state}
-%------------------------------------------------------------------------------
-
-Consider a lattice with a static activity distribution $a(x)$. In steady state, each node settles into a completion rate $f(x) \in [0,1]$: the fraction of update opportunities that result in completed cycles.
-
-From Eq.~\eqref{eq:sync-rule}, the delay at node $x$ is the maximum of its local delay and $\alpha$ times the average neighbor delay. In steady state, delay and completion rate are inversely related: $\texttt{delay}(x) \propto 1/f(x)$. Writing $\lambda(x) = 1 - f(x)$ for the stall fraction (small in the weak-congestion regime), the synchronization rule becomes a self-consistency condition:
-\begin{equation}
-    \lambda(x) \;=\; \max\Bigl(\lambda_{\text{local}}(x),\; \alpha \cdot \langle\lambda\rangle_x\Bigr)
-    \label{eq:self-consistency}
-\end{equation}
-where $\lambda_{\text{local}}(x) \sim \gamma \, a(x)$ is the stall fraction from local bandwidth saturation and $\langle\lambda\rangle_x$ is the average stall fraction among neighbors of $x$.
-
-%------------------------------------------------------------------------------
-\subsection{Coupling Regimes}
-\label{subsec:coupling_regimes}
-%------------------------------------------------------------------------------
-
-In the weak-congestion limit ($\lambda \ll 1$), the $\max$ softens to a linear combination, and the self-consistency condition can be analyzed via the graph Laplacian (see Appendix~\ref{app:derivation}). The result depends critically on $\alpha$:
-
-\textbf{Damped coupling ($\alpha < 1$).} The steady-state equation takes the form of a \emph{screened Poisson equation}:
-\begin{equation}
-    \nabla^2 \lambda \;-\; k^2 \lambda \;=\; -\kappa \, \rho_{\text{act}}
-    \label{eq:screened-poisson}
-\end{equation}
-where the screening wavevector $k \propto \sqrt{1-\alpha}$ sets an exponential decay scale. Solutions fall off as $e^{-kr}/r$ in three dimensions—a Yukawa potential. Synchronization pressure dissipates at each hop; the interaction is short-ranged.
-
-\textbf{Full coupling ($\alpha = 1$).} The screening term vanishes, leaving a pure Laplacian:
-\begin{equation}
-    \nabla^2 \lambda \;=\; -\kappa \, \rho_{\text{act}}
-    \label{eq:poisson-lambda}
-\end{equation}
-This is Poisson's equation. Solutions fall off as $1/r$ in three dimensions (or $\log r$ in two dimensions)—long-range, like Newtonian gravity.
-
-The transition at $\alpha = 1$ is not gradual: any $\alpha < 1$ produces exponential screening, regardless of how close to unity. Long-range behavior, characteristic of Newtonian gravity, emerges only when synchronization pressure propagates without attenuation. In this sense, full coupling is not merely a convenient choice but a necessary condition for the gravitational analogy to hold.
-
-%------------------------------------------------------------------------------
-\subsection{Definition of the Time-Sag Field}
+\subsection{Definition}
 \label{subsec:timesag_def}
 %------------------------------------------------------------------------------
 
-We define the \emph{time-sag field} as the deviation of the completion rate from its uncongested value:
+In steady state, each node settles into a characteristic completion rate $f(x) \in [0,1]$: the fraction of update opportunities that result in completed cycles. We define the \emph{time-sag field} as the deviation from the uncongested rate:
 \begin{equation}
-    \phi(x) \;\equiv\; f(x) - 1 \;=\; -\lambda(x)
+    \phi(x) \;\equiv\; f(x) - 1 \;\leq\; 0
     \label{eq:timesag-def}
 \end{equation}
-With this sign convention:
+
+The interpretation is direct:
 \begin{itemize}
-    \item $\phi(x) = 0$ in quiet regions (full completion, no congestion).
-    \item $\phi(x) < 0$ in congested regions (reduced completion rate).
+    \item $\phi(x) = 0$: quiet region, all updates complete.
+    \item $\phi(x) < 0$: congested region, some updates stall.
 \end{itemize}
 
 Active regions sit in potential wells, with $\phi$ becoming more negative where congestion is worse. The field satisfies $\phi(x) \in [-1, 0]$, with $\phi = -1$ representing complete congestion.
 
-For full coupling ($\alpha = 1$), the time-sag field satisfies:
+%------------------------------------------------------------------------------
+\subsection{Field Behavior}
+\label{subsec:field_behavior}
+%------------------------------------------------------------------------------
+
+The synchronization rule couples neighboring nodes: when a node's neighbors are slow, it slows down to maintain bounded staleness. This coupling causes local congestion to spread through the lattice, producing a smooth field rather than isolated pockets of slowdown.
+
+The strength of coupling matters. If nodes couple weakly to their neighbors, congestion dissipates quickly with distance. If nodes couple fully—matching the average pace of their neighborhood—the influence propagates without attenuation and the resulting field is long-ranged.
+
+To see why, consider steady state with full coupling ($\alpha = 1$). The synchronization rule (Eq.~\ref{eq:sync-rule}) involves a $\max$ of local and neighbor delays. In steady state, when both contributions are comparable, this relaxes to a sum: each node's delay $\delta(x)$ matches the average delay of its neighbors, plus a local contribution from activity:
 \begin{equation}
-    \nabla^2 \phi \;=\; \kappa \, \rho_{\text{act}}
-    \label{eq:poisson-phi}
+    \delta(x) \;=\; \langle\delta\rangle_x \;+\; \gamma\, a(x)
+    \label{eq:heuristic}
 \end{equation}
-This is mathematically identical to the Newtonian gravitational potential, with activity density $\rho_{\text{act}}$ playing the role of mass density. For a localized source in three dimensions, $\phi \propto -1/r$. In two dimensions, $\phi \propto -\log r$.
+Rearranging, $\delta(x) - \langle\delta\rangle_x = \gamma\, a(x)$. The left-hand side is proportional to the discrete Laplacian $(L\delta)(x) = d[\delta(x) - \langle\delta\rangle_x]$. In the continuum limit, this becomes $\nabla^2\phi = \kappa\,\rho_{\mathrm{act}}$, Poisson's equation with activity density as source. Details appear in Appendix~\ref{app:derivation}.
+
+We show in Section~\ref{sec:simulator} that with full coupling, the emergent $\phi(x)$ field around a localized activity source matches the solution to Poisson's equation, with activity density playing the role of mass density. In two dimensions this gives $\phi \propto -\log(r/r_0)$; in three dimensions it would give $\phi \propto -1/r$.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Gravitational Phenomenology}
@@ -323,7 +287,7 @@ In two dimensions, the Poisson equation yields a logarithmic potential: $\phi \p
     \includegraphics[width=0.48\columnwidth]{figures/radial_profile.png}
     \hfill
     \includegraphics[width=0.48\columnwidth]{figures/field_heatmap.png}
-    \caption{Steady-state time-sag field for a single localized source on a 2D lattice. (a) Radial profile of $f(r)$ outside the source, compared to the 2D Newtonian prediction $f \propto 1 - \log(1/r)$. (b) Emergent $f(x)$ field around the source (star). Darker regions indicate lower completion rate.}
+\caption{Steady-state time-sag field for a single localized source on a 2D lattice. (a) Radial profile of $f(r)$ outside the source, compared to the 2D Newtonian prediction $f(r) = 1 + \phi(r)$ with $\phi \propto \ln(r/R)$, where $R$ is the boundary radius. (b) Emergent $f(x)$ field around the source (star). Darker regions indicate lower completion rate.}
     \label{fig:field}
 \end{figure}
 
@@ -371,7 +335,7 @@ The activity distribution is static and externally imposed. The simulations ther
 
 The time-sag field $\phi(x)$ is a scalar. This suffices for Newtonian gravity but not for general relativity, which requires a rank-2 metric tensor.
 
-Our derivation tracks only total activity at each node—a single number. But if the update rule consults a multi-hop neighborhood, the engine naturally sees not just how much activity there is, but how it is distributed spatially and whether information flows asymmetrically.
+Our model tracks only total activity at each node - a single number. But if the update rule consults a multi-hop neighborhood, the engine naturally sees not just how much activity there is, but how it is distributed spatially and whether information flows asymmetrically.
 
 This suggests a route to richer structure:
 \begin{itemize}
@@ -388,166 +352,40 @@ We have not derived the Einstein equations, but some of the architectural ingred
 \label{sec:conclusion}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-We have shown that gravitational phenomenology can emerge from a minimal computational substrate operating under finite bandwidth.
+We have shown that message-passing lattices—a generalization of cellular automata with explicit communication costs—can produce long-range collective behavior from purely local rules.
 
 The core mechanism is a synchronization problem. In a message-passing lattice, nodes must coordinate their updates despite having no global clock. Fully synchronous updates cause global fragility; fully asynchronous updates allow unbounded drift. Bounded staleness—where nodes adjust their pace to limit drift from neighbors—provides a middle path. When combined with finite link capacity, this synchronization pressure transforms local congestion into a smooth, lattice-wide slowdown field.
 
-The resulting time-sag field $\phi(x)$ satisfies a Poisson equation sourced by activity density, yielding $1/r$ potentials in three dimensions and logarithmic potentials in two. Clocks in congested regions tick slowly, and propagating patterns refract toward regions of deeper $\phi$. These are the signatures of gravitational time dilation and free fall, arising from bandwidth constraints rather than spacetime curvature.
+With full coupling ($\alpha = 1$), the resulting time-sag field $\phi(x)$ satisfies a Poisson equation sourced by activity density, yielding $1/r$ potentials in three dimensions and logarithmic potentials in two. Clocks in congested regions tick slowly, and propagating patterns refract toward regions of deeper $\phi$. These dynamics mirror gravitational time dilation and free fall, arising here from bandwidth constraints rather than spacetime curvature.
 
-A key finding is that long-range behavior requires full coupling: any damping of the synchronization pressure ($\alpha < 1$) converts the Poisson equation into a screened Poisson equation, producing exponentially decaying Yukawa potentials. Newtonian gravity emerges only at $\alpha = 1$, where synchronization pressure propagates without attenuation.
+Numerical simulations on a 2D lattice validate these findings. The steady-state $\phi$ field around a localized activity source shows the expected logarithmic profile. Propagating particles exhibit orbital motion and flyby deflection consistent with an attractive central potential.
 
-Numerical simulations on a 2D lattice validate these predictions. The steady-state $\phi$ field around a localized activity source shows the expected logarithmic profile. Propagating particles exhibit orbital motion and flyby deflection consistent with an attractive central potential.
+Several questions remain open. The current simulations impose activity externally; whether propagating patterns can self-consistently source the fields they traverse—so that two wavepackets attract each other through the congestion they each generate—has not been demonstrated. Extension to three dimensions would test whether the mechanism scales correctly. And the relationship between coupling strength and field behavior deserves further study.
 
-Several questions remain open. The current simulations impose activity externally; whether propagating patterns can self-consistently source the fields they traverse—so that two wavepackets attract each other through the congestion they each generate—has not been demonstrated. Extension to three dimensions would test whether the mechanism scales correctly. And the connection between activity in the MPL and physical mass or energy remains to be established.
-
-Nonetheless, the central result stands: a discrete network with bounded communication, operating under a simple local synchronization rule, produces a long-range attractive interaction with the characteristic features of Newtonian gravity. The usual intuition treats gravity as a fundamental force that causes time dilation; here the order is reversed. Time dilation arises first, from bandwidth saturation, and gravitational attraction follows as a consequence. This suggests that gravity-like behavior may be a natural consequence of resource constraints on any local, finite substrate.
+Nonetheless, the central result stands: a discrete network with bounded communication, operating under a simple local synchronization rule, produces a long-range attractive interaction with the mathematical structure of Newtonian gravity. The usual intuition treats gravity as a force that causes time dilation; here the order is reversed. Differential clock rates arise first, from bandwidth saturation, and gravitational attraction follows as a consequence. This suggests that gravity-like behavior may be a natural consequence of resource constraints on any local, finite substrate.
 
 \appendix
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Derivation of the Time-Sag Field Equation}
+\section{Derivation of the Field Equation}
 \label{app:derivation}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%------------------------------------------------------------------------------
-\subsection{Setup}
-%------------------------------------------------------------------------------
-
-We derive the steady-state behavior of the time-sag field from the synchronization rule introduced in Section~\ref{sec:sync}. Consider an MPL where each node $x$ has activity $a(x)$ and each link has capacity $C$ bits per update opportunity.
-
-%------------------------------------------------------------------------------
-\subsection{The Micro-Rule}
-%------------------------------------------------------------------------------
-
-Each node schedules its next update according to:
+In steady state with full coupling ($\alpha = 1$), each node's delay satisfies:
 \begin{equation}
-    \texttt{next\_update}(x) \;=\; \max\bigl(\texttt{local\_delay}(x),\; \alpha \cdot \langle\texttt{delay}\rangle_x\bigr)
-    \label{eq:app-micro-rule}
+    \delta(x) = \max\bigl(\gamma a(x) + 1,\; \langle\delta\rangle_x\bigr)
 \end{equation}
-where:
-\begin{itemize}
-    \item $\texttt{local\_delay}(x) = |m_x|/C \sim \gamma\, a(x)$ is the time to transmit the outgoing message, proportional to activity with constant $\gamma > 0$.
-    \item $\langle\texttt{delay}\rangle_x$ is the average delay among neighbors of $x$, inferred from gaps between received messages.
-    \item $\alpha \in [0,1]$ is the coupling strength.
-\end{itemize}
-
-%------------------------------------------------------------------------------
-\subsection{Steady-State Condition}
-%------------------------------------------------------------------------------
-
-In steady state, each node settles into a constant delay $\delta(x) = \texttt{next\_update}(x)$. The completion rate $f(x)$—the fraction of update opportunities that result in completed cycles—is inversely related to delay:
+In the weak-congestion regime where both terms contribute comparably, self-consistency requires:
 \begin{equation}
-    f(x) = \frac{1}{\delta(x)}
+    \delta(x) - \langle\delta\rangle_x \approx \gamma\, a(x)
 \end{equation}
-where we normalize so that $f = 1$ corresponds to one completion per opportunity (no stalling).
-
-Define the stall fraction $\lambda(x) = 1 - f(x)$, which is small in the weak-congestion regime. Since $f(x) = 1/\delta(x)$, we have $\delta(x) = 1/(1-\lambda(x))$, which for small $\lambda$ expands to:
+On a regular lattice with degree $d$, the graph Laplacian satisfies $(L\delta)(x) = d[\delta(x) - \langle\delta\rangle_x]$, giving:
 \begin{equation}
-    \delta(x) \approx 1 + \lambda(x)
+    (L\delta)(x) = d\gamma\, a(x)
 \end{equation}
-
-%------------------------------------------------------------------------------
-\subsection{Linearized Self-Consistency}
-%------------------------------------------------------------------------------
-
-Substituting into Eq.~\eqref{eq:app-micro-rule}, the steady-state delay satisfies:
+In the continuum limit, $L \to -\ell^2\nabla^2$. Defining $\phi = 1 - \delta$ (so $\phi \leq 0$ in congested regions), we obtain:
 \begin{equation}
-    \delta(x) = \max\bigl(\gamma\, a(x) + 1,\; \alpha \cdot \langle\delta\rangle_x\bigr)
+    \nabla^2\phi = \kappa\,\rho_{\mathrm{act}}
 \end{equation}
-where we have written $\texttt{local\_delay}(x) = \gamma\, a(x) + 1$ to account for the baseline delay of one opportunity even with zero activity.
+with $\kappa > 0$. This is Poisson's equation, yielding $\phi \propto -1/r$ in 3D and $\phi \propto \ln(r/R)$ in 2D.
 
-In the weak-congestion regime, where the local and neighbor contributions are both small perturbations, the $\max$ operation can be approximated by a sum (both contributions independently push the delay above baseline). Subtracting 1 from both sides and using $\lambda = \delta - 1$:
-\begin{equation}
-    \lambda(x) \;\approx\; \gamma\, a(x) \;+\; \alpha \cdot \langle\lambda\rangle_x
-    \label{eq:app-self-consistency}
-\end{equation}
+For $\alpha < 1$, an additional $(1-\alpha)\phi$ term appears, producing a screened Poisson equation with finite-range solutions.
 
-This is the self-consistency condition: a node's stall fraction arises from local bandwidth saturation (first term) and coupling to neighbor stall fractions (second term).
-
-%------------------------------------------------------------------------------
-\subsection{Laplacian Form}
-%------------------------------------------------------------------------------
-
-Rearranging Eq.~\eqref{eq:app-self-consistency}:
-\begin{equation}
-    \lambda(x) - \alpha \cdot \langle\lambda\rangle_x = \gamma\, a(x)
-\end{equation}
-
-On a regular lattice with degree $d$, the graph Laplacian acts as:
-\begin{equation}
-    (L\lambda)(x) = \sum_{y \sim x} [\lambda(x) - \lambda(y)] = d\left[\lambda(x) - \langle\lambda\rangle_x\right]
-\end{equation}
-
-Solving for the neighbor average:
-\begin{equation}
-    \langle\lambda\rangle_x = \lambda(x) - \frac{1}{d}(L\lambda)(x)
-\end{equation}
-
-Substituting into the self-consistency equation:
-\begin{equation}
-    \lambda(x) - \alpha\left[\lambda(x) - \frac{1}{d}(L\lambda)(x)\right] = \gamma\, a(x)
-\end{equation}
-
-This simplifies to:
-\begin{equation}
-    (1 - \alpha)\,\lambda(x) + \frac{\alpha}{d}(L\lambda)(x) = \gamma\, a(x)
-    \label{eq:app-master}
-\end{equation}
-
-%------------------------------------------------------------------------------
-\subsection{Coupling Regimes}
-%------------------------------------------------------------------------------
-
-The character of Eq.~\eqref{eq:app-master} depends on $\alpha$:
-
-\paragraph{No coupling ($\alpha = 0$).}
-The Laplacian term vanishes:
-\begin{equation}
-    \lambda(x) = \gamma\, a(x)
-\end{equation}
-Stalling is purely local. Each node's congestion depends only on its own activity, with no spatial propagation.
-
-\paragraph{Damped coupling ($0 < \alpha < 1$).}
-Both terms contribute. Passing to the continuum limit (see below), Eq.~\eqref{eq:app-master} becomes a screened Poisson equation:
-\begin{equation}
-    \nabla^2\lambda - k^2\lambda = -\kappa\,\rho_{\text{act}}
-\end{equation}
-where the screening wavevector is:
-\begin{equation}
-    k = \frac{1}{\ell}\sqrt{\frac{d(1-\alpha)}{\alpha}}
-\end{equation}
-and $\ell$ is the lattice spacing. Solutions decay exponentially beyond the screening length $\xi = 1/k$. For $\alpha$ close to but below unity, $\xi \propto 1/\sqrt{1-\alpha}$ diverges, but remains finite.
-
-\paragraph{Full coupling ($\alpha = 1$).}
-The first term in Eq.~\eqref{eq:app-master} vanishes, leaving:
-\begin{equation}
-    (L\lambda)(x) = d\gamma\, a(x)
-    \label{eq:app-laplacian}
-\end{equation}
-This is a pure Laplacian equation with no screening. Solutions are long-ranged.
-
-%------------------------------------------------------------------------------
-\subsection{Continuum Limit}
-%------------------------------------------------------------------------------
-
-On a regular $D$-dimensional lattice with spacing $\ell$, the graph Laplacian approaches the continuum Laplacian:
-\begin{equation}
-    (L\lambda)(x) \to -\ell^2 \nabla^2\lambda
-\end{equation}
-The sign arises because the graph Laplacian is positive when a node exceeds its neighbors, while $\nabla^2$ is negative at a local maximum.
-
-For full coupling ($\alpha = 1$), Eq.~\eqref{eq:app-laplacian} becomes:
-\begin{equation}
-    \nabla^2\lambda = -\kappa\,\rho_{\text{act}}
-\end{equation}
-where $\rho_{\text{act}}(x)$ is the coarse-grained activity density and $\kappa > 0$ absorbs $\gamma$, $d$, and $\ell$.
-
-%------------------------------------------------------------------------------
-\subsection{Conversion to Time-Sag}
-%------------------------------------------------------------------------------
-
-Defining the time-sag field $\phi = -\lambda = f - 1$, we obtain:
-\begin{equation}
-    \nabla^2\phi = \kappa\,\rho_{\text{act}}
-\end{equation}
-
-This is Poisson's equation with source $\rho_{\text{act}}$. For a localized source in three dimensions, $\phi \propto -1/r$; in two dimensions, $\phi \propto -\log(r/r_0)$. These match the Newtonian gravitational potential, with activity density playing the role of mass density.\end{document}
+\end{document}

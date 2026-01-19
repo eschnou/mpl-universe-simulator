@@ -220,7 +220,7 @@ class BandwidthScheduler:
         # Send interval: max of local and sync constraints
         self._send_interval = np.maximum(local_time, sync_time)
 
-        # Enforce Dirichlet BC on send_interval BEFORE using it
+        # Enforce boundary condition on send_interval BEFORE using it
         # This ensures boundary nodes actually send at base rate
         if self.lattice.config.boundary == "absorbing":
             self._send_interval[0, :] = cfg.base_interval   # Top edge
@@ -239,7 +239,7 @@ class BandwidthScheduler:
         # Update f field
         self.lattice.f = np.clip(cfg.base_interval / self._send_interval, 0.0, 1.0)
 
-        # Enforce Dirichlet BC: f=1 at boundaries for absorbing BC
+        # Enforce boundary condition: f=1 at boundaries for absorbing BC
         # (send_interval already enforced above before computing next_send_tick)
         if self.lattice.config.boundary == "absorbing":
             self.lattice.f[0, :] = 1.0   # Top edge
